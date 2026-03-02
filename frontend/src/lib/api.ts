@@ -122,16 +122,16 @@ export async function searchVerses(request: SearchRequest): Promise<SearchRespon
   // Let's implement buffering here for compatibility:
 
   return new Promise((resolve, reject) => {
-    let finalResults: any = null;
-    let fullTokenText = "";
+    let finalResults: SearchResponse | null = null;
+    const tokenParts: string[] = [];
 
     streamSearchVerses(request, {
       onResults: (data) => { finalResults = data; },
-      onToken: (token) => { fullTokenText += token; },
+      onToken: (token) => { tokenParts.push(token); },
       onError: (msg) => reject(new Error(msg)),
       onComplete: () => {
         if (finalResults) {
-          finalResults.ai_response = fullTokenText || null;
+          finalResults.ai_response = tokenParts.length > 0 ? tokenParts.join('') : undefined;
           resolve(finalResults);
         } else {
           reject(new Error("No results received"));
@@ -150,7 +150,8 @@ export interface StreamCallbacks {
 
 export async function streamSearchVerses(
   request: SearchRequest,
-  callbacks: StreamCallbacks
+  callbacks: StreamCallbacks,
+  signal?: AbortSignal
 ): Promise<void> {
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
@@ -167,6 +168,7 @@ export async function streamSearchVerses(
       method: 'POST',
       headers,
       body: JSON.stringify(request),
+      signal,
     });
 
     if (!response.ok) {
@@ -179,34 +181,47 @@ export async function streamSearchVerses(
     const decoder = new TextDecoder();
     let buffer = '';
 
+    const processLine = (line: string) => {
+      if (!line.trim()) return;
+      try {
+        const msg = JSON.parse(line);
+        if (msg.type === 'results') {
+          callbacks.onResults?.(msg.data);
+        } else if (msg.type === 'token') {
+          callbacks.onToken?.(msg.content);
+        } else if (msg.type === 'error') {
+          callbacks.onError?.(msg.message);
+        }
+      } catch {
+        // Incomplete JSON line — skip it
+      }
+    };
+
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+
+      if (done) {
+        // Flush any remaining content in the buffer
+        processLine(buffer);
+        break;
+      }
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
 
       for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const msg = JSON.parse(line);
-          if (msg.type === 'results') {
-            callbacks.onResults?.(msg.data);
-          } else if (msg.type === 'token') {
-            callbacks.onToken?.(msg.content);
-          } else if (msg.type === 'error') {
-            callbacks.onError?.(msg.message);
-          }
-        } catch (e) {
-          console.error('JSON parse error', e);
-        }
+        processLine(line);
       }
     }
 
     callbacks.onComplete?.();
 
   } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      callbacks.onComplete?.();
+      return;
+    }
     callbacks.onError?.(error instanceof Error ? error.message : String(error));
   }
 }
@@ -302,14 +317,14 @@ export async function getTranslations(language?: string): Promise<TranslationsRe
   }
 
   // Fetch and cache
-  translationsCachePromise = (async () => {
+  translationsCachePromise = (async (): Promise<TranslationsResponse> => {
     try {
       const response = await api.get<TranslationsResponse>('/api/translations');
       translationsCache = response.data;
       return response.data;
     } catch (error) {
       translationsCachePromise = null; // Clear on error to allow retry
-      handleError(error as AxiosError);
+      throw handleError(error as AxiosError);
     }
   })();
 

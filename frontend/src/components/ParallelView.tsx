@@ -1,4 +1,5 @@
 import React from 'react';
+import { KOREAN_TRANSLATION_ABBREVS } from '@/lib/constants';
 const Aromanize = require('aromanize/base');
 
 interface Translation {
@@ -38,8 +39,7 @@ export default function ParallelView({
       try {
         const romanized = Aromanize.romanize(text);
         return romanized;
-      } catch (error) {
-        console.error('Romanization failed:', error);
+      } catch {
         return text;
       }
     }
@@ -47,10 +47,8 @@ export default function ParallelView({
     return text;
   };
 
-  const isKoreanTranslation = (abbrev: string) => {
-    const koreanAbbrevs = ['RNKSV', 'NKRV', 'RKV', 'KRV', 'KCBS'];
-    return koreanAbbrevs.includes(abbrev);
-  };
+  const isKoreanTranslation = (abbrev: string) =>
+    (KOREAN_TRANSLATION_ABBREVS as readonly string[]).includes(abbrev);
 
   return (
     <div className="parallel-view max-w-content mx-auto">
@@ -77,9 +75,9 @@ export default function ParallelView({
         layout === 'horizontal' ? 'flex gap-space-md overflow-x-auto' :
         'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-space-md'
       }`}>
-        {translations.map((translation, index) => (
+        {translations.map((translation) => (
           <div
-            key={index}
+            key={translation.abbreviation}
             className={`border-l-4 border-text-tertiary dark:border-text-dark-tertiary pl-space-md pr-space-md py-space-sm bg-surface dark:bg-surface-dark transition-colors ${
               layout === 'horizontal' ? 'min-w-[400px] flex-shrink-0' : ''
             }`}
@@ -148,10 +146,8 @@ export function CompactParallelView({
   translations,
   koreanMode = 'hangul',
 }: Omit<ParallelViewProps, 'layout'>) {
-  const isKoreanTranslation = (abbrev: string) => {
-    const koreanAbbrevs = ['RNKSV', 'NKRV', 'RKV', 'KRV', 'KCBS'];
-    return koreanAbbrevs.includes(abbrev);
-  };
+  const isKoreanTranslation = (abbrev: string) =>
+    (KOREAN_TRANSLATION_ABBREVS as readonly string[]).includes(abbrev);
 
   const transformKoreanText = (text: string, isKorean: boolean): string => {
     if (!isKorean || koreanMode === 'hangul') return text;
@@ -160,8 +156,7 @@ export function CompactParallelView({
       try {
         const romanized = Aromanize.romanize(text);
         return romanized;
-      } catch (error) {
-        console.error('Romanization failed:', error);
+      } catch {
         return text;
       }
     }
@@ -171,8 +166,8 @@ export function CompactParallelView({
 
   return (
     <div className="compact-parallel-view space-y-space-sm">
-      {translations.map((translation, index) => (
-        <div key={index} className="flex gap-space-sm items-start">
+      {translations.map((translation) => (
+        <div key={translation.abbreviation} className="flex gap-space-sm items-start">
           <div className="flex-shrink-0">
             <span className="font-ui text-xs uppercase tracking-wide text-text-tertiary dark:text-text-dark-tertiary font-semibold border-b border-text-tertiary dark:border-text-dark-tertiary pb-px">
               {translation.abbreviation}

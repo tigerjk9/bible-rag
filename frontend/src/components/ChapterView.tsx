@@ -5,19 +5,12 @@ import { useRouter } from 'next/navigation';
 import { getVerse } from '@/lib/api';
 import OriginalLanguage from '@/components/OriginalLanguage';
 import { OriginalLanguageData, CrossReference } from '@/types';
+import { KOREAN_TRANSLATION_ABBREVS } from '@/lib/constants';
 
 interface Verse {
   verse: number;
   translations: Record<string, string>;
-  original?: {
-    language: string;
-    words: Array<{
-      word: string;
-      transliteration: string;
-      strongs: string;
-      definition: string;
-    }>;
-  };
+  original?: OriginalLanguageData;
 }
 
 interface ChapterViewProps {
@@ -74,7 +67,7 @@ export default function ChapterView({
           [verseNum]: details,
         }));
       } catch (error) {
-        console.error('Error loading verse details:', error);
+        if (process.env.NODE_ENV === 'development') console.error('Error loading verse details:', error);
       } finally {
         setLoadingVerse(null);
       }
@@ -112,14 +105,13 @@ export default function ChapterView({
           return (
             <div key={verse.verse} id={`verse-${verse.verse}`}>
               {/* Verse Text */}
-              <div
-                role="button"
-                tabIndex={0}
-                className={`group hover:bg-background dark:hover:bg-background-dark -mx-space-sm px-space-sm py-space-sm transition-all cursor-pointer ${
+              <button
+                className={`w-full text-left group hover:bg-background dark:hover:bg-background-dark -mx-space-sm px-space-sm py-space-sm transition-all cursor-pointer ${
                   isExpanded ? 'bg-background dark:bg-background-dark border-l-4 border-accent-scripture dark:border-accent-dark-scripture' : ''
                 }`}
                 onClick={() => handleVerseClick(verse.verse)}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') handleVerseClick(verse.verse); }}
+                aria-expanded={isExpanded}
+                aria-label={`Verse ${verse.verse}`}
               >
                 <div className="flex items-start gap-space-sm">
                   {/* Verse Number */}
@@ -137,8 +129,8 @@ export default function ChapterView({
                   <div className="flex-1">
                     <p
                       className={`font-body text-lg leading-relaxed ${
-                        selectedTranslation.includes('개역') ||
-                        selectedTranslation.includes('KR')
+                        (KOREAN_TRANSLATION_ABBREVS as readonly string[]).includes(selectedTranslation) ||
+                        selectedTranslation.includes('개역')
                           ? 'font-korean'
                           : ''
                       } text-text-primary dark:text-text-dark-primary`}
@@ -153,7 +145,7 @@ export default function ChapterView({
                     {isExpanded ? '▼' : '▶'}
                   </span>
                 </div>
-              </div>
+              </button>
 
               {/* Expanded Details */}
               {isExpanded && (

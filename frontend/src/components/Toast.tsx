@@ -33,7 +33,7 @@ export default function Toast({ message, type = 'error', onClose, duration = 400
   };
 
   return (
-    <div className="fixed top-4 right-4 z-[100] animate-slide-in">
+    <div className="fixed top-4 right-4 z-[100] animate-slide-in" role="alert" aria-live="assertive">
       <div
         className={`${bgColors[type]} text-white px-6 py-4 rounded-lg shadow-2xl flex items-center gap-3 min-w-[300px] max-w-md`}
       >

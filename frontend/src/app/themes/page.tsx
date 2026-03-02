@@ -49,8 +49,7 @@ export default function ThemesPage() {
             language: t.language_code,
           }));
         setTranslations(mappedTranslations);
-      } catch (error) {
-        console.error('Failed to fetch translations:', error);
+      } catch {
         setTranslations([
           { abbrev: 'NIV', name: 'New International Version', language: 'en' },
           { abbrev: 'ESV', name: 'English Standard Version', language: 'en' },
@@ -373,7 +372,7 @@ export default function ThemesPage() {
 
             {/* Verse cards */}
             <div className="space-y-space-md">
-              {results.results.map((result: SearchResult, idx: number) => (
+              {results.results.map((result: SearchResult) => (
                 <VerseCard
                   key={`${result.reference.book}-${result.reference.chapter}-${result.reference.verse}`}
                   result={result}

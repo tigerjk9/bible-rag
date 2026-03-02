@@ -16,6 +16,7 @@ export default function Home() {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   // Auto-scroll to bottom unless user has scrolled up
   const scrollToBottom = useCallback(() => {
@@ -63,6 +64,11 @@ export default function Home() {
     setMessages(prev => [...prev, userMsg, assistantMsg]);
     setIsLoading(true);
     userScrolledRef.current = false;
+
+    // Cancel any in-flight request before starting a new one
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = new AbortController();
+    const signal = abortControllerRef.current.signal;
 
     // Build conversation history from prior messages (last 10 messages = ~5 turns)
     const history = messages
@@ -113,7 +119,7 @@ export default function Home() {
           ));
           setIsLoading(false);
         },
-      });
+      }, signal);
     } catch (err) {
       setMessages(prev => prev.map(m =>
         m.id === assistantId

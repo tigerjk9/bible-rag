@@ -84,8 +84,8 @@ export default function ComparePage() {
       setBooks(booksRes.books);
 
       // Default translations are set in state initialization (NIV, ESV, KJV)
-    } catch (err) {
-      console.error('Failed to load translations/books:', err);
+    } catch {
+      // Non-fatal: translations/books are optional for initial render
     }
   };
 

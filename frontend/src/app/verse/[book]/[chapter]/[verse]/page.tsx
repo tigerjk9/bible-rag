@@ -59,8 +59,7 @@ export default function VerseDetailPage() {
         );
 
         setAvailableTranslations(uniqueTranslations);
-      } catch (error) {
-        console.error('Failed to fetch translations:', error);
+      } catch {
         // Fallback to common translations
         setAvailableTranslations([
           { abbreviation: 'NIV', name: 'New International Version' },
@@ -87,9 +86,8 @@ export default function VerseDetailPage() {
         // Fetch verse WITHOUT cross-references (faster initial load)
         const data = await getVerse(book, chapter, verse, selectedTranslations, showOriginal);
         setVerseData(data);
-      } catch (err: any) {
-        console.error('Error fetching verse:', err);
-        setError(err.message || 'Failed to load verse');
+      } catch (err: unknown) {
+        setError((err as Error).message || 'Failed to load verse');
       } finally {
         setLoading(false);
       }
@@ -121,8 +119,8 @@ export default function VerseDetailPage() {
           );
           setRelatedVerses(filtered);
         }
-      } catch (err: any) {
-        console.error('Error fetching related verses:', err);
+      } catch {
+        // Non-fatal: related verses are supplementary
       } finally {
         setLoadingRelated(false);
       }

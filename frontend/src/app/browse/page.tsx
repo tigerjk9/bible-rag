@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useState, useRef, Suspense } from 'react';
+import { useEffect, useState, useRef, useMemo, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { getBooks, getChapter, getTranslations } from '@/lib/api';
-import { Book, Translation } from '@/types';
+import { Book, Translation, OriginalLanguageData } from '@/types';
 import ChapterView from '@/components/ChapterView';
 import Toast from '@/components/Toast';
+import { NAVBAR_HEIGHT } from '@/lib/constants';
 
 interface ChapterData {
   reference: {
@@ -17,7 +18,7 @@ interface ChapterData {
   verses: Array<{
     verse: number;
     translations: Record<string, string>;
-    original?: any;
+    original?: OriginalLanguageData;
   }>;
 }
 
@@ -80,9 +81,8 @@ function BrowsePageContent() {
             await loadChapter(bookParam, chapterNum);
           }
         }
-      } catch (err: any) {
-        console.error('Error fetching data:', err);
-        setError(err.message || 'Failed to load data');
+      } catch (err: unknown) {
+        setError((err as Error).message || 'Failed to load data');
       } finally {
         setLoading(false);
       }
@@ -133,8 +133,7 @@ function BrowsePageContent() {
       setVisibleChapters([key]);
       // Scroll after a brief delay to ensure DOM is updated
       setTimeout(() => scrollToChapter(key), 100);
-    } catch (err: any) {
-      console.error('Error loading chapter:', err);
+    } catch {
       setToast({ message: `Failed to load ${bookName} ${chapter} / ${bookName} ${chapter}장을 불러오는데 실패했습니다`, type: 'error' });
     }
   };
@@ -143,8 +142,7 @@ function BrowsePageContent() {
     const element = chapterRefs.current.get(key);
     if (element) {
       // Calculate offset for navbar
-      const navbarHeight = 64;
-      const totalOffset = navbarHeight + 16;
+      const totalOffset = NAVBAR_HEIGHT + 16;
 
       const elementPosition = element.getBoundingClientRect().top + window.pageYOffset;
       const offsetPosition = elementPosition - totalOffset;
@@ -217,8 +215,7 @@ function BrowsePageContent() {
       setTimeout(() => {
         const verseElement = document.getElementById(`verse-${searchVerse}`);
         if (verseElement) {
-          const navbarHeight = 64;
-          const totalOffset = navbarHeight + 16;
+          const totalOffset = NAVBAR_HEIGHT + 16;
 
           const elementPosition = verseElement.getBoundingClientRect().top + window.pageYOffset;
           const offsetPosition = elementPosition - totalOffset;
@@ -239,23 +236,31 @@ function BrowsePageContent() {
     }
   };
 
-  // Filter books based on search
-  const filteredOTBooks = books.filter(
-    (b) =>
-      b.testament === 'OT' &&
-      (searchBook === '' ||
-        b.name.toLowerCase().includes(searchBook.toLowerCase()) ||
-        b.name_korean?.includes(searchBook) ||
-        b.abbreviation?.toLowerCase().includes(searchBook.toLowerCase()))
+  // Filter books based on search — memoized to avoid recalculating on every render
+  const filteredOTBooks = useMemo(
+    () =>
+      books.filter(
+        (b) =>
+          b.testament === 'OT' &&
+          (searchBook === '' ||
+            b.name.toLowerCase().includes(searchBook.toLowerCase()) ||
+            b.name_korean?.includes(searchBook) ||
+            b.abbreviation?.toLowerCase().includes(searchBook.toLowerCase()))
+      ),
+    [books, searchBook]
   );
 
-  const filteredNTBooks = books.filter(
-    (b) =>
-      b.testament === 'NT' &&
-      (searchBook === '' ||
-        b.name.toLowerCase().includes(searchBook.toLowerCase()) ||
-        b.name_korean?.includes(searchBook) ||
-        b.abbreviation?.toLowerCase().includes(searchBook.toLowerCase()))
+  const filteredNTBooks = useMemo(
+    () =>
+      books.filter(
+        (b) =>
+          b.testament === 'NT' &&
+          (searchBook === '' ||
+            b.name.toLowerCase().includes(searchBook.toLowerCase()) ||
+            b.name_korean?.includes(searchBook) ||
+            b.abbreviation?.toLowerCase().includes(searchBook.toLowerCase()))
+      ),
+    [books, searchBook]
   );
 
   const handleLoadAdjacentChapter = async (bookName: string, chapter: number) => {
