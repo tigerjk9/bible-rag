@@ -3,11 +3,31 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { SearchResult } from '@/types';
+import { getChapter } from '@/lib/api';
 
 interface VerseCardProps {
   result: SearchResult;
   showAllTranslations?: boolean;
   defaultTranslation?: string;
+}
+
+interface ContextVerse {
+  verse: number;
+  chapter: number;
+  text: string;
+}
+
+// Relationship type display config
+const REL_CONFIG: Record<string, { label: string; className: string }> = {
+  quotation:  { label: 'Quotation',  className: 'text-accent-scripture dark:text-accent-dark-scripture' },
+  parallel:   { label: 'Parallel',   className: 'text-emerald-600 dark:text-emerald-400' },
+  allusion:   { label: 'Allusion',   className: 'text-amber-600 dark:text-amber-400' },
+  thematic:   { label: 'Thematic',   className: 'text-purple-600 dark:text-purple-400' },
+};
+
+function confidenceLabel(confidence?: number): string | null {
+  if (confidence === undefined || confidence === null || confidence >= 0.7) return null;
+  return confidence >= 0.5 ? '· probable' : '· possible';
 }
 
 export default function VerseCard({ result, showAllTranslations = false, defaultTranslation }: VerseCardProps) {
@@ -18,12 +38,68 @@ export default function VerseCard({ result, showAllTranslations = false, default
 
   const [activeTranslation, setActiveTranslation] = useState<string>(initialTranslation);
   const [showCrossRefs, setShowCrossRefs] = useState(false);
+  const [contextBefore, setContextBefore] = useState<ContextVerse[] | null>(null);
+  const [contextAfter, setContextAfter] = useState<ContextVerse[] | null>(null);
+  const [showContext, setShowContext] = useState(false);
+  const [loadingContext, setLoadingContext] = useState(false);
 
   const { reference, translations, relevance_score, cross_references } = result;
 
   const relevancePercent = Math.round(relevance_score * 100);
   const isKorean = (text: string) => /[\uac00-\ud7a3]/.test(text);
   const verseUrl = `/verse/${encodeURIComponent(reference.book)}/${reference.chapter}/${reference.verse}`;
+
+  // Group cross-references by relationship type
+  const groupedRefs = cross_references?.reduce<Record<string, typeof cross_references>>((acc, ref) => {
+    const rel = ref.relationship || 'thematic';
+    if (!acc[rel]) acc[rel] = [];
+    acc[rel].push(ref);
+    return acc;
+  }, {});
+
+  async function handleLoadContext() {
+    // Toggle off if already loaded
+    if (contextBefore !== null) {
+      setShowContext(!showContext);
+      return;
+    }
+
+    setLoadingContext(true);
+    try {
+      const translation = activeTranslation || defaultTranslation;
+      const chapterData = await getChapter(
+        reference.book,
+        reference.chapter,
+        translation ? [translation] : undefined,
+      );
+
+      const verses: { verse: number; translations: Record<string, string> }[] =
+        chapterData?.verses ?? [];
+
+      const targetIdx = verses.findIndex((v) => v.verse === reference.verse);
+      const translationKey = translation || Object.keys(verses[0]?.translations ?? {})[0] || '';
+
+      const before: ContextVerse[] = [];
+      const after: ContextVerse[] = [];
+
+      for (let i = Math.max(0, targetIdx - 2); i < targetIdx; i++) {
+        const v = verses[i];
+        if (v) before.push({ verse: v.verse, chapter: reference.chapter, text: v.translations[translationKey] ?? '' });
+      }
+      for (let i = targetIdx + 1; i <= Math.min(verses.length - 1, targetIdx + 2); i++) {
+        const v = verses[i];
+        if (v) after.push({ verse: v.verse, chapter: reference.chapter, text: v.translations[translationKey] ?? '' });
+      }
+
+      setContextBefore(before);
+      setContextAfter(after);
+      setShowContext(true);
+    } catch {
+      // Silently fail — context is non-critical
+    } finally {
+      setLoadingContext(false);
+    }
+  }
 
   return (
     <div className="verse-card">
@@ -77,6 +153,20 @@ export default function VerseCard({ result, showAllTranslations = false, default
         </div>
       )}
 
+      {/* Context: verses before */}
+      {showContext && contextBefore && contextBefore.length > 0 && (
+        <div className="mb-2 space-y-1 opacity-50">
+          {contextBefore.map((cv) => (
+            <p key={cv.verse} className={`${isKorean(cv.text) ? 'verse-text-korean korean-text' : 'verse-text'} text-sm dark:text-text-dark-secondary`}>
+              <span className="font-ui text-xs text-text-tertiary dark:text-text-dark-tertiary mr-2 select-none">
+                {cv.chapter}:{cv.verse}
+              </span>
+              {cv.text}
+            </p>
+          ))}
+        </div>
+      )}
+
       {/* Verse text - THE HERO */}
       {showAllTranslations ? (
         <div className="space-y-space-md">
@@ -102,36 +192,78 @@ export default function VerseCard({ result, showAllTranslations = false, default
         </p>
       )}
 
-      {/* Cross-references - comma-separated links */}
-      {cross_references && cross_references.length > 0 && (
-        <div className="mt-space-md pt-space-md border-t border-border-light dark:border-border-dark-light">
+      {/* Context: verses after */}
+      {showContext && contextAfter && contextAfter.length > 0 && (
+        <div className="mt-2 space-y-1 opacity-50">
+          {contextAfter.map((cv) => (
+            <p key={cv.verse} className={`${isKorean(cv.text) ? 'verse-text-korean korean-text' : 'verse-text'} text-sm dark:text-text-dark-secondary`}>
+              <span className="font-ui text-xs text-text-tertiary dark:text-text-dark-tertiary mr-2 select-none">
+                {cv.chapter}:{cv.verse}
+              </span>
+              {cv.text}
+            </p>
+          ))}
+        </div>
+      )}
+
+      {/* Context toggle button + cross-refs row */}
+      <div className="mt-space-md pt-space-md border-t border-border-light dark:border-border-dark-light flex flex-wrap items-center gap-x-4 gap-y-1">
+        <button
+          onClick={handleLoadContext}
+          disabled={loadingContext}
+          className="btn-text dark:text-text-dark-secondary dark:hover:text-text-dark-primary dark:border-text-dark-tertiary dark:hover:border-text-dark-primary text-xs"
+        >
+          {loadingContext
+            ? 'Loading…'
+            : showContext
+            ? '▴ Hide context'
+            : '± Context'}
+        </button>
+
+        {cross_references && cross_references.length > 0 && (
           <button
             onClick={() => setShowCrossRefs(!showCrossRefs)}
-            className="btn-text dark:text-text-dark-secondary dark:hover:text-text-dark-primary dark:border-text-dark-tertiary dark:hover:border-text-dark-primary mb-2"
+            className="btn-text dark:text-text-dark-secondary dark:hover:text-text-dark-primary dark:border-text-dark-tertiary dark:hover:border-text-dark-primary text-xs"
           >
             {showCrossRefs ? '▾' : '▸'} See also ({cross_references.length})
           </button>
+        )}
+      </div>
 
-          {showCrossRefs && (
-            <div className="flex flex-wrap gap-x-3 gap-y-1">
-              {cross_references.map((ref, idx) => {
-                const crossRefUrl = `/verse/${encodeURIComponent(ref.book)}/${ref.chapter}/${ref.verse}`;
-                return (
-                  <span key={`${ref.book}-${ref.chapter}-${ref.verse}`}>
-                    <Link
-                      href={crossRefUrl}
-                      className="verse-ref dark:text-accent-dark-reference dark:hover:border-accent-dark-reference"
-                    >
-                      {ref.book} {ref.chapter}:{ref.verse}
-                    </Link>
-                    {idx < cross_references.length - 1 && (
-                      <span className="text-text-tertiary dark:text-text-dark-tertiary">, </span>
-                    )}
-                  </span>
-                );
-              })}
-            </div>
-          )}
+      {/* Cross-references: grouped by relationship type with confidence labels */}
+      {showCrossRefs && groupedRefs && (
+        <div className="mt-2 space-y-2">
+          {Object.entries(groupedRefs).map(([rel, refs]) => {
+            const config = REL_CONFIG[rel] ?? { label: rel, className: 'text-text-tertiary dark:text-text-dark-tertiary' };
+            return (
+              <div key={rel}>
+                <span className={`font-ui text-[10px] uppercase tracking-wide ${config.className} mr-2`}>
+                  {config.label}
+                </span>
+                <span className="inline-flex flex-wrap gap-x-3 gap-y-1">
+                  {refs.map((ref) => {
+                    const crossRefUrl = `/verse/${encodeURIComponent(ref.book)}/${ref.chapter}/${ref.verse}`;
+                    const confLabel = confidenceLabel(ref.confidence);
+                    return (
+                      <span key={`${ref.book}-${ref.chapter}-${ref.verse}`} className="inline-flex items-baseline gap-1">
+                        <Link
+                          href={crossRefUrl}
+                          className="verse-ref dark:text-accent-dark-reference dark:hover:border-accent-dark-reference"
+                        >
+                          {ref.book} {ref.chapter}:{ref.verse}
+                        </Link>
+                        {confLabel && (
+                          <span className="font-ui text-[10px] text-text-tertiary dark:text-text-dark-tertiary">
+                            {confLabel}
+                          </span>
+                        )}
+                      </span>
+                    );
+                  })}
+                </span>
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

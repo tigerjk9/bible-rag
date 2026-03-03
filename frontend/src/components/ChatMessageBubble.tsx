@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { ChatMessage, ChatMessageAssistant, SearchResponse } from '@/types';
 import VerseCard from './VerseCard';
+import { parseVerseText } from '@/lib/verseParser';
 
 interface ChatMessageBubbleProps {
   message: ChatMessage;
@@ -24,7 +25,7 @@ function VerseResultsDropdown({ results, defaultTranslation }: { results: Search
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 font-ui text-xs text-text-tertiary dark:text-text-dark-tertiary hover:text-text-secondary dark:hover:text-text-dark-secondary transition-colors"
       >
-        <span className="transition-transform inline-block" style={{ transform: isOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+        <span className={`transition-transform inline-block ${isOpen ? 'rotate-90' : 'rotate-0'}`}>
           ▸
         </span>
         <span>
@@ -136,10 +137,10 @@ export default function ChatMessageBubble({ message, userQuery, defaultTranslati
           </div>
         )}
 
-        {/* AI text as plain chat text */}
+        {/* AI text with clickable verse references when streaming is complete */}
         {msg.aiText && (
           <p className={`${isKorean ? 'font-korean korean-text' : 'font-body'} text-base leading-relaxed text-text-primary dark:text-text-dark-primary`}>
-            {msg.aiText}
+            {msg.isStreaming ? msg.aiText : parseVerseText(msg.aiText)}
           </p>
         )}
 

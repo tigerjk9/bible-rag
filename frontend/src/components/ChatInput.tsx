@@ -181,8 +181,7 @@ export default function ChatInput({
             placeholder="Ask about the Bible..."
             rows={1}
             disabled={isLoading}
-            className="flex-1 resize-none overflow-y-auto font-body text-sm bg-background dark:bg-background-dark text-text-primary dark:text-text-dark-primary border border-border-light dark:border-border-dark rounded-lg px-3 py-2 placeholder:text-text-tertiary dark:placeholder:text-text-dark-tertiary focus:outline-none focus:border-text-primary dark:focus:border-text-dark-primary transition-colors"
-            style={{ maxHeight: '120px' }}
+            className="flex-1 resize-none overflow-y-auto max-h-[120px] font-body text-sm bg-background dark:bg-background-dark text-text-primary dark:text-text-dark-primary border border-border-light dark:border-border-dark rounded-lg px-3 py-2 placeholder:text-text-tertiary dark:placeholder:text-text-dark-tertiary focus:outline-none focus:border-text-primary dark:focus:border-text-dark-primary transition-colors"
           />
 
           {/* Send button */}

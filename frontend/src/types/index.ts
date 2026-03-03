@@ -193,6 +193,40 @@ export interface ChatMessageAssistant {
 
 export type ChatMessage = ChatMessageUser | ChatMessageAssistant;
 
+// --- Strong's Concordance Search Types ---
+
+export interface StrongsVerse {
+  reference: VerseReference;
+  translations: Record<string, string>;
+}
+
+export interface StrongsSearchResponse {
+  strongs_number: string;
+  language: string;
+  definition?: string;
+  transliteration?: string;
+  total_count: number;
+  verses: StrongsVerse[];
+}
+
+// --- Chapter Types ---
+
+export interface ChapterVerse {
+  verse: number;
+  translations: Record<string, string>;
+  original?: OriginalLanguageData;
+}
+
+export interface ChapterResponse {
+  reference: {
+    book: string;
+    book_korean?: string;
+    chapter: number;
+    testament: string;
+  };
+  verses: ChapterVerse[];
+}
+
 // --- Error Types ---
 
 export interface APIError {

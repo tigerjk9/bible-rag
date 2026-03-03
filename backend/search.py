@@ -928,6 +928,9 @@ async def search_verses(
     # Maintain order from RRF ranking
     results = [verse_groups[ref] for ref, _ in top_refs if ref in verse_groups]
 
+    # 5b. Fill single-verse gaps in consecutive chapter sequences
+    results = await _fill_verse_gaps(db, results, translation_ids, translation_map)
+
     # 6. Fetch enrichment data
     for result_item in results:
         verse_id = UUID(result_item["verse_id"])
@@ -956,6 +959,116 @@ async def search_verses(
         cache.cache_results(cache_key, response, query)
 
     return response
+
+
+async def _fill_verse_gaps(
+    db: AsyncSession,
+    results: list[dict],
+    translation_ids: list,
+    translation_map: dict,
+) -> list[dict]:
+    """Insert missing verses that fall between consecutive retrieved verses in the same chapter.
+
+    When the result set contains verse N and verse N+2 from the same book and
+    chapter, verse N+1 is fetched and inserted between them. This prevents the
+    LLM from missing critical context — e.g., receiving Mark 12:29 and 12:31
+    without 12:30, which contains the actual commandment text.
+
+    Only fills single-verse gaps (gap of exactly 1) to avoid over-fetching.
+    Gap-filled verses are marked with gap_fill=True so the frontend can
+    optionally style them differently.
+    """
+    if len(results) < 2:
+        return results
+
+    from collections import defaultdict
+
+    # Map each (book, chapter) to the list of (verse_num, result_index) present
+    chapter_groups: dict[tuple, list[tuple[int, int]]] = defaultdict(list)
+    for i, result in enumerate(results):
+        ref = result.get("reference", {})
+        book = ref.get("book", "")
+        chapter = ref.get("chapter")
+        verse = ref.get("verse")
+        if book and chapter is not None and verse is not None:
+            chapter_groups[(book, chapter)].append((verse, i))
+
+    # Find gaps of exactly 1 verse within each chapter group
+    gaps: list[tuple] = []  # (book, chapter, gap_verse, insert_after_idx, avg_score)
+    for (book, chapter), verse_indices in chapter_groups.items():
+        if len(verse_indices) < 2:
+            continue
+        sorted_pairs = sorted(verse_indices)  # sort by verse_num ascending
+        for j in range(len(sorted_pairs) - 1):
+            curr_verse, curr_idx = sorted_pairs[j]
+            nxt_verse, nxt_idx = sorted_pairs[j + 1]
+            if nxt_verse - curr_verse == 2:
+                avg_score = (
+                    results[curr_idx].get("relevance_score", 0)
+                    + results[nxt_idx].get("relevance_score", 0)
+                ) / 2 * 0.9
+                gaps.append((book, chapter, curr_verse + 1, curr_idx, avg_score))
+
+    if not gaps:
+        return results
+
+    # Track already-present verses to avoid duplicate inserts
+    present: set[tuple] = {
+        (r["reference"]["book"], r["reference"]["chapter"], r["reference"]["verse"])
+        for r in results
+        if r.get("reference")
+    }
+
+    filled = list(results)
+    # Insert in descending order of insert_after_idx so earlier indices stay valid
+    for book, chapter, gap_verse, insert_after_idx, avg_score in sorted(
+        gaps, key=lambda x: x[3], reverse=True
+    ):
+        if (book, chapter, gap_verse) in present:
+            continue
+
+        gap_rows = (
+            await db.execute(
+                select(Verse, Translation, Book)
+                .join(Translation, Verse.translation_id == Translation.id)
+                .join(Book, Verse.book_id == Book.id)
+                .where(
+                    Book.name == book,
+                    Verse.chapter == chapter,
+                    Verse.verse == gap_verse,
+                    Verse.translation_id.in_(translation_ids),
+                )
+            )
+        ).all()
+
+        if not gap_rows:
+            continue
+
+        first_verse, _, first_book = gap_rows[0]
+        gap_result = {
+            "reference": {
+                "book": first_book.name,
+                "book_korean": first_book.name_korean,
+                "book_abbrev": first_book.abbreviation,
+                "chapter": chapter,
+                "verse": gap_verse,
+                "testament": first_book.testament,
+                "genre": first_book.genre,
+            },
+            "translations": {
+                translation_map.get(str(v.translation_id), "Unknown"): v.text
+                for v, t, b in gap_rows
+            },
+            "relevance_score": avg_score,
+            "verse_id": str(first_verse.id),
+            "gap_fill": True,
+        }
+
+        filled.insert(insert_after_idx + 1, gap_result)
+        present.add((book, chapter, gap_verse))
+        logger.info(f"Gap-filled: {book} {chapter}:{gap_verse}")
+
+    return filled
 
 
 async def get_cross_references(db: AsyncSession, verse_id: UUID, limit: int = 5) -> list[dict]:

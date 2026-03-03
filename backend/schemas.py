@@ -298,6 +298,27 @@ class ErrorResponse(BaseModel):
     )
 
 
+# --- Strong's Concordance Search ---
+
+
+class StrongsVerse(BaseModel):
+    """A verse returned from a Strong's concordance search."""
+
+    reference: VerseReference
+    translations: dict[str, str]
+
+
+class StrongsSearchResponse(BaseModel):
+    """Response schema for Strong's number lookup endpoint."""
+
+    strongs_number: str
+    language: str  # "greek", "hebrew", or "aramaic"
+    definition: Optional[str] = None
+    transliteration: Optional[str] = None
+    total_count: int
+    verses: list[StrongsVerse]
+
+
 # --- Theme Response ---
 
 

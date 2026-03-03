@@ -13,6 +13,8 @@ import {
   BooksResponse,
   HealthResponse,
   APIError,
+  StrongsSearchResponse,
+  ChapterResponse,
 } from '@/types';
 
 // API base URL from environment
@@ -259,7 +261,7 @@ export async function getChapter(
   chapter: number,
   translations?: string[],
   includeOriginal: boolean = false,
-): Promise<any> {
+): Promise<ChapterResponse> {
   try {
     const params = new URLSearchParams();
     if (translations?.length) {
@@ -269,6 +271,30 @@ export async function getChapter(
 
     const response = await api.get(
       `/api/chapter/${encodeURIComponent(book)}/${chapter}?${params.toString()}`
+    );
+    return response.data;
+  } catch (error) {
+    handleError(error as AxiosError);
+  }
+}
+
+/**
+ * Look up all Bible verses containing a specific Strong's concordance number.
+ */
+export async function getStrongsVerses(
+  strongsNumber: string,
+  translations?: string[],
+  limit: number = 20,
+): Promise<StrongsSearchResponse> {
+  try {
+    const params = new URLSearchParams();
+    if (translations?.length) {
+      params.set('translations', translations.join(','));
+    }
+    params.set('limit', String(limit));
+
+    const response = await api.get<StrongsSearchResponse>(
+      `/api/strongs/${encodeURIComponent(strongsNumber)}?${params.toString()}`
     );
     return response.data;
   } catch (error) {
