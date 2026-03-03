@@ -28,7 +28,7 @@ graph TB
     CDN["CloudFlare CDN<br/>(DNS + DDoS Protection)"]
     
     subgraph Vercel["Frontend (Vercel)"]
-        Frontend["Next.js 16<br/>- Global CDN<br/>- Edge functions<br/>- Auto HTTPS"]
+        Frontend["Next.js 15<br/>- Global CDN<br/>- Edge functions<br/>- Auto HTTPS"]
     end
     
     subgraph Railway["Backend (Railway)"]
@@ -279,7 +279,8 @@ REDIS_URL=redis://default:[password]@redis-12345.upstash.io:6379
 GEMINI_API_KEY=your_gemini_key
 GROQ_API_KEY=your_groq_key
 EMBEDDING_MODEL=intfloat/multilingual-e5-large
-PYTHON_VERSION=3.14
+RERANKER_MODEL=BAAI/bge-reranker-v2-m3
+PYTHON_VERSION=3.12
 ```
 
 #### Step 4: Deploy
@@ -509,9 +510,10 @@ REDIS_URL=redis://default:[password]@redis-12345.upstash.io:6379
 GEMINI_API_KEY=[your-gemini-key]
 GROQ_API_KEY=[your-groq-key]
 
-# Embedding Model
+# Embedding + Reranker Models
 EMBEDDING_MODEL=intfloat/multilingual-e5-large
 EMBEDDING_DIMENSION=1024
+RERANKER_MODEL=BAAI/bge-reranker-v2-m3
 
 # Cache Settings
 CACHE_TTL=86400  # 24 hours
@@ -670,11 +672,11 @@ startCommand = "cd backend && gunicorn main:app -c gunicorn_conf.py"
 
 ### Frontend Optimization
 
-**Enable Turbopack (Next.js 16):**
+**Build commands (Next.js 15):**
 ```json
 {
   "scripts": {
-    "dev": "next dev --turbopack",
+    "dev": "next dev",
     "build": "next build",
     "start": "next start"
   }
@@ -767,7 +769,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.14'
+          python-version: '3.12'
 
       - name: Install dependencies
         run: |
@@ -810,13 +812,16 @@ jobs:
 
 ### Pre-Deployment Checklist
 
-- [ ] All tests passing
-- [ ] Environment variables configured
-- [ ] Database migrations applied
-- [ ] Embeddings uploaded to Supabase
-- [ ] Health check endpoint responding
+- [ ] All tests passing (`pytest backend/tests/ -v`)
+- [ ] Environment variables configured (DATABASE_URL, REDIS_URL, GEMINI_API_KEY, GROQ_API_KEY, RERANKER_MODEL)
+- [ ] Database schema created and pgvector extension enabled
+- [ ] All translations ingested (`scripts/data_ingestion.py`)
+- [ ] Original language data ingested (`scripts/original_ingestion.py`)
+- [ ] Embeddings generated and ivfflat index built (`scripts/embeddings.py`)
+- [ ] Health check endpoint responding (`GET /health` → `status: healthy`)
 - [ ] Monitoring alerts configured
 - [ ] Backup strategy in place
 - [ ] SSL certificates valid
 - [ ] DNS records configured
-- [ ] Rate limiting enabled
+- [ ] ALLOWED_ORIGINS set to production frontend domain
+- [ ] `DEBUG=false` in production environment

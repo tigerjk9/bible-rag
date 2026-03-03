@@ -20,10 +20,10 @@ This document outlines all data sources used in the Bible RAG project, their lic
 The Bible RAG system integrates multiple data sources to provide comprehensive Bible study capabilities across English, Korean, and original biblical languages (Hebrew, Greek, Aramaic).
 
 **Data Types:**
-- Bible translations (10+ versions)
-- Original language manuscripts
-- Cross-reference relationships
-- Lexical data (Strong's numbers, morphology)
+- Bible translations (9+ versions ingested)
+- Original language manuscripts (Hebrew, Greek, Aramaic — 442,413 words)
+- Cross-reference relationships (63,779+ connections)
+- Lexical data (Strong's numbers, morphology, transliterations)
 
 ---
 
@@ -361,6 +361,6 @@ Before deploying to production, verify:
 
 This document provides general information about data sources and licensing. It is not legal advice. For specific licensing questions or commercial use cases, consult with the copyright holders directly or seek legal counsel.
 
-**Last Updated**: 2026-01-13
+**Last Updated**: 2026-03-02
 **Maintained By**: Bible RAG Project Team
 **Review Frequency**: Quarterly

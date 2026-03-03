@@ -4,11 +4,11 @@ A multilingual Bible study platform powered by semantic search, supporting Engli
 
 ## Overview
 
-Bible RAG is a Retrieval-Augmented Generation (RAG) system that transforms Bible study through intelligent semantic search. Ask natural questions in English or Korean and receive contextually relevant passages with cross-translation comparisons, original language insights, and AI-powered interpretations.
+Bible RAG is a Retrieval-Augmented Generation (RAG) system that transforms Bible study through intelligent semantic search. Ask natural questions in English or Korean and receive contextually relevant passages with cross-translation comparisons, original language insights, and AI-powered interpretations — delivered through a conversational chat interface with streaming responses.
 
 ### Key Features
 
-- **Semantic Search**: Natural language queries in English or Korean
+- **Chat Interface**: Conversational search with multi-turn context and streaming AI responses
   - "What does Jesus say about forgiveness?"
   - "용서에 대한 예수님의 말씀"
   - Handles code-switching: "요한복음에서 love에 대한 구절"
@@ -18,6 +18,12 @@ Bible RAG is a Retrieval-Augmented Generation (RAG) system that transforms Bible
   - **Korean**: 개역한글 (KRV), 새번역 (RNKSV), 개역개정 (NKRV - optional)
   - **Original Languages**: Hebrew (OT), Greek (NT), Aramaic (Daniel, Ezra portions)
   - All via free APIs - no API keys required!
+
+- **Hybrid Search Pipeline**
+  - Vector similarity (multilingual-e5-large) + full-text search (PostgreSQL tsvector)
+  - Reciprocal Rank Fusion (RRF) combining both signal types
+  - Cross-encoder reranking (BAAI/bge-reranker-v2-m3) on top-30 candidates
+  - LLM query expansion for improved recall
 
 - **Parallel Translation View**: Compare verses side-by-side across translations
 
@@ -30,13 +36,18 @@ Bible RAG is a Retrieval-Augmented Generation (RAG) system that transforms Bible
   - Transliteration and pronunciation guides
   - Interlinear word-by-word analysis
   - Clickable Strong's links to Blue Letter Bible
+  - **"Find all verses"** lookup by Strong's number via `/api/strongs/{number}`
 
-- **Cross-Reference Discovery**: Automatically surface related passages, prophecy-fulfillment connections, and quotations
+- **Cross-Reference Discovery**: Automatically surface related passages, grouped by relationship type (quotation, parallel, allusion, thematic) with confidence qualifiers
+
+- **Context Expansion**: View ±2 surrounding verses around any result inline
+
+- **Inline Verse Citations**: AI response text auto-links verse references (e.g. "John 3:16") to clickable verse cards
 
 - **Korean-Specific Features**
   - Hanja (한자) display for theological terms
-  - Romanization for pronunciation
-  - Optimized Korean typography (Noto Sans KR, 나눔고딕)
+  - Romanization (via `aromanize`) for pronunciation
+  - Optimized Korean typography (Noto Sans KR)
   - Respectful honorific language handling
 
 - **Theological Term Glossary**: Multilingual term mapping
@@ -46,22 +57,28 @@ Bible RAG is a Retrieval-Augmented Generation (RAG) system that transforms Bible
   은혜 (eunhye) = Grace = χάρις (charis, G5485)
   ```
 
-- **Smart Query Understanding**: Automatic intent detection and language recognition
+- **User API Keys**: Bring-your-own Gemini/Groq keys via settings panel; keys sent as request headers, never stored server-side
+
+- **Dark Mode**: System-aware dark/light theme toggle
 
 ## Tech Stack
 
 ### Backend
-- **FastAPI** (Python 3.12+) - High-performance API server
-- **PostgreSQL + pgvector** - Vector similarity search
-- **Redis** - Query caching and performance optimization
+- **FastAPI** (Python 3.12+) - High-performance async API server with streaming NDJSON
+- **PostgreSQL + pgvector** - Vector + full-text search (ivfflat index)
+- **Redis** - Query result caching (24h TTL, normalized keys)
 - **multilingual-e5-large** - Self-hosted embedding model (1024-dim)
-- **Groq Llama 3.3 70B** - LLM for contextual responses (with Gemini fallback)
+- **BAAI/bge-reranker-v2-m3** - Cross-encoder reranker for top-30 candidates
+- **Google Gemini 2.5 Flash** - Primary LLM for contextual responses
+- **Groq Llama 3.3 70B** - Fallback LLM when Gemini is rate-limited
 
 ### Frontend
-- **Next.js 15** - React framework with Turbopack bundler
+- **Next.js 15** - React framework with App Router
+- **React 19** - UI library
 - **TypeScript 5.7** - Type-safe development
-- **Tailwind CSS** - Utility-first styling
+- **Tailwind CSS 3** - Utility-first styling
 - **Noto Sans KR** - Optimized Korean font support
+- **aromanize** - Korean romanization library
 
 ### Deployment
 - **Development**: Local PostgreSQL, Redis, FastAPI, Next.js
@@ -73,7 +90,7 @@ Bible RAG is a Retrieval-Augmented Generation (RAG) system that transforms Bible
 - Python 3.12+
 - Node.js 22 LTS (or Node.js 20 LTS)
 - Docker & Docker Compose
-- 8GB RAM minimum (16GB recommended)
+- 8GB RAM minimum (16GB recommended for embedding model + reranker)
 
 ### Local Development Setup
 
@@ -147,23 +164,26 @@ Bible RAG is a Retrieval-Augmented Generation (RAG) system that transforms Bible
 ```
 bible-rag/
 ├── backend/                              # FastAPI backend
-│   ├── main.py                           # API entry point
-│   ├── database.py                       # SQLAlchemy models
-│   ├── search.py                         # Vector search logic
+│   ├── main.py                           # API entry point, CORS, router registration
+│   ├── config.py                         # Settings via pydantic-settings
+│   ├── database.py                       # SQLAlchemy async models + connection
+│   ├── search.py                         # Hybrid search: vector + FTS → RRF → rerank
+│   ├── embeddings.py                     # multilingual-e5-large embedding wrapper
+│   ├── reranker.py                       # BAAI/bge-reranker-v2-m3 cross-encoder
+│   ├── llm.py                            # Gemini (primary) / Groq (fallback) LLM
+│   ├── llm_batcher.py                    # Batch LLM request accumulator
 │   ├── cache.py                          # Redis caching layer
-│   ├── llm.py                            # LLM integration (Gemini/Groq)
-│   ├── llm_batcher.py                    # Batch LLM processing
 │   ├── original_language.py              # Strong's concordance integration
 │   ├── cross_references.py               # Verse reference linking
 │   ├── data_fetchers.py                  # Bible data fetchers (Hebrew/Greek)
-│   ├── schemas.py                        # Pydantic response models
-│   ├── config.py                         # Environment configuration
+│   ├── schemas.py                        # Pydantic request/response models
+│   ├── init.sql                          # Initial DB schema SQL
 │   ├── routers/                          # API route modules
-│   │   ├── search.py                     # Search endpoints
-│   │   ├── verses.py                     # Verse lookup endpoints
-│   │   ├── themes.py                     # Thematic search endpoints
-│   │   ├── metadata.py                   # Translation/book metadata
-│   │   └── health.py                     # Health check endpoints
+│   │   ├── search.py                     # POST /api/search (streaming NDJSON)
+│   │   ├── verses.py                     # GET /api/verse, /api/chapter, /api/strongs
+│   │   ├── themes.py                     # POST /api/themes
+│   │   ├── metadata.py                   # GET /api/translations, /api/books
+│   │   └── health.py                     # GET /health
 │   ├── scripts/                          # Data ingestion and utilities
 │   │   ├── data_ingestion.py             # Bible text ingestion (9 translations)
 │   │   ├── embeddings.py                 # Embedding generation
@@ -173,7 +193,6 @@ bible-rag/
 │   │   └── verify_*.py                   # Verification utilities
 │   ├── data/                             # Static data
 │   │   └── books_metadata.py             # Bible book metadata
-│   ├── migrations/                       # Database migrations
 │   └── tests/                            # Test suite
 │       ├── test_search.py
 │       ├── test_cache.py
@@ -182,17 +201,29 @@ bible-rag/
 ├── frontend/                             # Next.js frontend
 │   └── src/
 │       ├── app/                          # Next.js pages (App Router)
-│       │   ├── page.tsx                  # Home/search page
+│       │   ├── page.tsx                  # Home/chat page (main search interface)
 │       │   ├── verse/[book]/[chapter]/[verse]/page.tsx  # Verse detail
 │       │   ├── browse/page.tsx           # Browse by book
 │       │   ├── compare/page.tsx          # Parallel translation comparison
 │       │   └── themes/page.tsx           # Thematic search
-│       └── components/                   # React components
-│           ├── SearchBar.tsx
-│           ├── VerseCard.tsx
-│           ├── ParallelView.tsx
-│           ├── OriginalLanguage.tsx
-│           └── ChapterView.tsx
+│       ├── components/                   # React components
+│       │   ├── ChatInput.tsx             # Chat message input bar
+│       │   ├── ChatMessageBubble.tsx     # User/AI chat message display w/ inline citations
+│       │   ├── VerseCard.tsx             # Verse display with context expand + cross-refs
+│       │   ├── WelcomeScreen.tsx         # Initial landing state
+│       │   ├── ParallelView.tsx          # Multi-translation side-by-side
+│       │   ├── OriginalLanguage.tsx      # Greek/Hebrew interlinear display
+│       │   ├── ChapterView.tsx           # Full chapter display
+│       │   ├── KoreanToggle.tsx          # Hanja/romanization toggle
+│       │   ├── APIKeySettings.tsx        # User API key configuration
+│       │   ├── DarkModeToggle.tsx        # Dark/light theme toggle
+│       │   ├── SearchMethodWarning.tsx   # Search method indicator
+│       │   ├── Toast.tsx                 # Notification toasts
+│       │   ├── Navbar.tsx                # Site navigation
+│       │   └── TranslationsPreloader.tsx # Background translation fetcher
+│       └── lib/
+│           ├── api.ts                    # Typed API client (axios + streaming fetch)
+│           └── verseParser.tsx           # Regex-based inline verse citation parser
 ├── docs/                                 # Comprehensive documentation
 │   ├── ARCHITECTURE.md                   # System design
 │   ├── DATABASE.md                       # Database schema
@@ -200,7 +231,6 @@ bible-rag/
 │   ├── SETUP.md                          # Detailed setup guide
 │   ├── DEPLOYMENT.md                     # Production deployment
 │   ├── FEATURES.md                       # Feature documentation
-│   ├── DEVELOPMENT.md                    # Contributing guide
 │   ├── KOREAN.md                         # Korean-specific docs
 │   └── DATA_SOURCES.md                   # Licensing and attribution
 ├── docker-compose.yml                    # Local development environment
@@ -210,9 +240,10 @@ bible-rag/
 ## Performance
 
 - **Query Response Time**: < 2 seconds for initial search, < 500ms for cached queries
+- **Reranking**: BAAI/bge-reranker-v2-m3 on top-30 RRF candidates (~50-200ms additional)
 - **Embedding Generation**: ~15-30 minutes one-time setup for full Bible (~31,000 verses)
-- **Vector Search**: Uses pgvector with ivfflat indexes for efficient similarity search
-- **Caching**: Redis-based multi-layer caching for common queries
+- **Vector Search**: pgvector ivfflat indexes for efficient cosine similarity
+- **Caching**: Redis with fully normalized keys (lowercase, sorted translations, canonical JSON → MD5)
 
 ## Original Language Data Statistics
 
@@ -253,5 +284,5 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
   - Aramaic portions integrated via OSHB/WLC with manual detection
 - **Cross-References**: [OpenBible.info](https://openbible.info) - 63,779+ verse connections (CC BY 4.0)
 - **Embedding Model**: [intfloat/multilingual-e5-large](https://huggingface.co/intfloat/multilingual-e5-large)
-- **LLM**: Google Gemini 2.5 Flash, Groq Llama 3.3 70B
-
+- **Reranker Model**: [BAAI/bge-reranker-v2-m3](https://huggingface.co/BAAI/bge-reranker-v2-m3)
+- **LLM**: Google Gemini 2.5 Flash (primary), Groq Llama 3.3 70B (fallback)

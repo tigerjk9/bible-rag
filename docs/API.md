@@ -10,8 +10,10 @@ Complete REST API documentation for the Bible RAG system.
 - [Response Format](#response-format)
 - [Error Handling](#error-handling)
 - [Endpoints](#endpoints)
-  - [Search](#post-apisearch)
+  - [Search (Streaming)](#post-apisearch)
   - [Verse Lookup](#get-apiversebookchapterverse)
+  - [Chapter Lookup](#get-apichapterbookchapter)
+  - [Strong's Number Lookup](#get-apistrongsstrongs_number)
   - [Thematic Search](#post-apithemes)
   - [List Translations](#get-apitranslations)
   - [List Books](#get-apibooks)
@@ -29,7 +31,7 @@ http://localhost:8000
 
 ### Production
 ```
-https://api.bible-rag.yourdom ain.com
+https://api.bible-rag.yourdomain.com
 ```
 
 All API endpoints are prefixed with `/api` unless otherwise noted.
@@ -38,32 +40,37 @@ All API endpoints are prefixed with `/api` unless otherwise noted.
 
 ## Authentication
 
-Currently, the API does not require authentication for public read operations.
+The API does not require authentication for public read operations.
 
-**Future:** JWT-based authentication for user-specific features (bookmarks, notes).
+**User API Keys**: For LLM-powered responses, users can supply their own Gemini or Groq API keys via request headers. These are never stored server-side.
+
+```http
+X-Gemini-API-Key: AIza...
+X-Groq-API-Key: gsk_...
+```
+
+When provided, these keys take priority over server-level environment keys.
 
 ---
 
 ## Rate Limiting
 
-### Current Limits
+### LLM Rate Limits (Backend)
 
-**Development:**
-- No rate limits
+The backend enforces soft rate limits for LLM generation:
 
-**Production:**
+| Provider | RPM Limit |
+|----------|-----------|
+| Gemini 2.5 Flash (primary) | 10 |
+| Groq Llama 3.3 70B (fallback) | 30 |
+
+When both providers are rate-limited, search results are still returned — only the AI-generated response is skipped.
+
+### Per-IP Limits (Production)
+
 - **Per IP**: 60 requests/minute
-- **Per endpoint**: Varies (see endpoint details)
 
-### Rate Limit Headers
-
-```http
-X-RateLimit-Limit: 60
-X-RateLimit-Remaining: 45
-X-RateLimit-Reset: 1641234567
-```
-
-### Rate Limit Exceeded Response
+### Rate Limit Response
 
 ```http
 HTTP/1.1 429 Too Many Requests
@@ -82,33 +89,32 @@ Content-Type: application/json
 
 ## Response Format
 
-### Success Response
+### Standard Success Response
 
-All successful responses return JSON with appropriate HTTP status codes.
+Non-streaming endpoints return JSON with appropriate HTTP status codes.
 
 ```http
 HTTP/1.1 200 OK
 Content-Type: application/json
-
-{
-  "data": { ... },
-  "meta": {
-    "timestamp": "2026-01-11T10:30:00Z",
-    "version": "1.0"
-  }
-}
 ```
 
-### Common HTTP Status Codes
+### Streaming Response (Search)
 
-| Code | Meaning | Usage |
-|------|---------|-------|
-| 200 | OK | Successful GET/POST request |
-| 201 | Created | Resource created successfully |
-| 400 | Bad Request | Invalid request parameters |
-| 404 | Not Found | Resource not found |
-| 429 | Too Many Requests | Rate limit exceeded |
-| 500 | Internal Server Error | Server error |
+`POST /api/search` returns **NDJSON** (newline-delimited JSON):
+
+```http
+HTTP/1.1 200 OK
+Content-Type: application/x-ndjson
+Transfer-Encoding: chunked
+```
+
+Each line is a complete JSON object:
+
+| Event type | When emitted | Shape |
+|------------|--------------|-------|
+| `results` | After retrieval + reranking | `{"type": "results", "data": {...}}` |
+| `token` | During LLM streaming | `{"type": "token", "content": "..."}` |
+| `error` | On unhandled exception | `{"type": "error", "message": "..."}` |
 
 ---
 
@@ -134,12 +140,11 @@ Content-Type: application/json
 | Code | HTTP Status | Description |
 |------|-------------|-------------|
 | `VALIDATION_ERROR` | 400 | Request validation failed |
-| `RESOURCE_NOT_FOUND` | 404 | Requested resource not found |
+| `VERSE_NOT_FOUND` | 404 | Requested verse not found |
+| `CHAPTER_NOT_FOUND` | 404 | Requested chapter not found |
+| `STRONGS_NOT_FOUND` | 404 | No verses found for that Strong's number |
 | `RATE_LIMIT_EXCEEDED` | 429 | Too many requests |
 | `INTERNAL_ERROR` | 500 | Server error |
-| `TRANSLATION_NOT_FOUND` | 400 | Invalid translation abbreviation |
-| `BOOK_NOT_FOUND` | 404 | Book not found |
-| `VERSE_NOT_FOUND` | 404 | Verse not found |
 
 ---
 
@@ -147,13 +152,17 @@ Content-Type: application/json
 
 ### POST /api/search
 
-Performs semantic search across Bible translations.
+Performs hybrid semantic search across Bible translations with streaming response.
+
+**Search pipeline**: Query expansion → vector + full-text hybrid retrieval → RRF fusion → cross-encoder reranking → LLM response generation.
 
 #### Request
 
 **Headers:**
 ```http
 Content-Type: application/json
+X-Gemini-API-Key: AIza...   (optional)
+X-Groq-API-Key: gsk_...     (optional)
 ```
 
 **Body:**
@@ -166,10 +175,14 @@ Content-Type: application/json
   "max_results": 10,
   "search_type": "semantic",
   "filters": {
-    "testament": "both",
+    "testament": "NT",
     "genre": null,
     "books": null
-  }
+  },
+  "conversation_history": [
+    {"role": "user", "content": "Tell me about grace"},
+    {"role": "assistant", "content": "Grace is..."}
+  ]
 }
 ```
 
@@ -177,83 +190,99 @@ Content-Type: application/json
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `query` | string | Yes | - | Search query (1-500 chars) |
-| `languages` | string[] | No | `["en"]` | Language codes: `"en"`, `"ko"` |
-| `translations` | string[] | Yes | - | Translation abbreviations |
-| `include_original` | boolean | No | `false` | Include Greek/Hebrew text |
+| `query` | string | Yes | — | Search query (1-500 chars) |
+| `languages` | string[] | No | `["en"]` | Language codes for response: `"en"`, `"ko"` |
+| `translations` | string[] | Yes | — | Translation abbreviations (e.g. `"NIV"`, `"KRV"`) |
+| `include_original` | boolean | No | `false` | Include Greek/Hebrew word data |
 | `max_results` | integer | No | `10` | Max results (1-100) |
 | `search_type` | string | No | `"semantic"` | `"semantic"` or `"keyword"` |
-| `filters.testament` | string | No | `"both"` | `"OT"`, `"NT"`, `"both"` |
+| `filters.testament` | string | No | `null` | `"OT"`, `"NT"`, or `"both"` |
 | `filters.genre` | string | No | `null` | Filter by genre |
 | `filters.books` | string[] | No | `null` | Filter by book abbreviations |
+| `conversation_history` | ConversationTurn[] | No | `null` | Previous turns for multi-turn context |
 
-#### Response
+**ConversationTurn:**
+```json
+{"role": "user" | "assistant", "content": "string (max 2000 chars)"}
+```
 
-**Success (200 OK):**
+#### Response (Streaming NDJSON)
 
+The response is a stream of newline-delimited JSON objects. Consume line by line.
+
+**Event 1 — Search results** (emitted first, before LLM):
 ```json
 {
-  "query_time_ms": 245,
-  "results": [
-    {
-      "reference": {
-        "book": "마태복음",
-        "book_en": "Matthew",
-        "chapter": 6,
-        "verse": 14,
-        "id": "a1b2c3d4-..."
-      },
-      "translations": {
-        "ko": "너희가 사람의 잘못을 용서하면 너희 하늘 아버지께서도 너희 잘못을 용서하시려니와",
-        "en": "For if you forgive other people when they sin against you, your heavenly Father will also forgive you."
-      },
-      "original": {
-        "language": "greek",
-        "text": "Ἐὰν γὰρ ἀφῆτε τοῖς ἀνθρώποις τὰ παραπτώματα αὐτῶν",
-        "strongs": ["G1437", "G1063", "G863", "G3588", "G444"],
-        "transliteration": "Ean gar aphēte tois anthrōpois ta paraptōmata autōn"
-      },
-      "relevance_score": 0.94,
-      "cross_references": [
-        {
-          "book": "마가복음",
-          "book_en": "Mark",
-          "chapter": 11,
-          "verse": 25
-        },
-        {
-          "book": "누가복음",
-          "book_en": "Luke",
+  "type": "results",
+  "data": {
+    "query_time_ms": 1245,
+    "results": [
+      {
+        "reference": {
+          "book": "Matthew",
+          "book_korean": "마태복음",
+          "book_abbrev": "Matt",
           "chapter": 6,
-          "verse": 37
+          "verse": 14,
+          "testament": "NT",
+          "genre": "gospel"
+        },
+        "translations": {
+          "NIV": "For if you forgive other people...",
+          "개역개정": "너희가 사람의 잘못을 용서하면..."
+        },
+        "relevance_score": 0.94,
+        "cross_references": [
+          {
+            "book": "Mark",
+            "book_korean": "마가복음",
+            "chapter": 11,
+            "verse": 25,
+            "relationship": "parallel",
+            "confidence": 0.9
+          }
+        ],
+        "original": {
+          "language": "greek",
+          "words": [
+            {
+              "word": "ἀφῆτε",
+              "transliteration": "aphēte",
+              "strongs": "G863",
+              "morphology": "V-AAS-2P",
+              "definition": "to send away, forgive"
+            }
+          ]
         }
-      ]
+      }
+    ],
+    "search_metadata": {
+      "total_results": 47,
+      "embedding_model": "multilingual-e5-large",
+      "generation_model": null,
+      "cached": false,
+      "search_method": "hybrid-rrf+rerank"
     }
-  ],
-  "ai_response": "Based on these passages, Jesus teaches that forgiveness is reciprocal...",
-  "search_metadata": {
-    "total_results": 47,
-    "embedding_model": "multilingual-e5-large",
-    "generation_model": "gemini-2.5-flash",
-    "cached": false
   }
 }
 ```
 
-**Error (400 Bad Request):**
-
+**Event 2+ — LLM tokens** (streamed as generated):
 ```json
-{
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "Invalid request parameters",
-    "details": {
-      "query": "Query must be between 1 and 500 characters",
-      "translations": "At least one translation is required"
-    }
-  }
-}
+{"type": "token", "content": "Based"}
+{"type": "token", "content": " on"}
+{"type": "token", "content": " these"}
 ```
+
+**Error event:**
+```json
+{"type": "error", "message": "Database connection failed"}
+```
+
+**`search_metadata.search_method` values:**
+- `"semantic"` — vector search only
+- `"hybrid-rrf"` — vector + FTS merged via RRF, no reranker
+- `"hybrid-rrf+rerank"` — full pipeline with cross-encoder reranking
 
 #### cURL Example
 
@@ -265,14 +294,14 @@ curl -X POST http://localhost:8000/api/search \
     "languages": ["en"],
     "translations": ["NIV"],
     "max_results": 5
-  }'
+  }' | while IFS= read -r line; do echo "$line" | python3 -m json.tool; done
 ```
 
 ---
 
 ### GET /api/verse/{book}/{chapter}/{verse}
 
-Retrieves a specific verse in multiple translations.
+Retrieves a specific verse in multiple translations with optional enrichments.
 
 #### Request
 
@@ -280,7 +309,7 @@ Retrieves a specific verse in multiple translations.
 
 | Parameter | Type | Description | Example |
 |-----------|------|-------------|---------|
-| `book` | string | Book abbreviation or name | `John`, `요한복음` |
+| `book` | string | Book name or abbreviation | `John`, `요한복음`, `Matt` |
 | `chapter` | integer | Chapter number | `3` |
 | `verse` | integer | Verse number | `16` |
 
@@ -288,8 +317,8 @@ Retrieves a specific verse in multiple translations.
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `translations` | string | No | All | Comma-separated abbreviations |
-| `include_original` | boolean | No | `false` | Include Greek/Hebrew |
+| `translations` | string | No | All | Comma-separated abbreviations (e.g. `NIV,KRV`) |
+| `include_original` | boolean | No | `false` | Include Greek/Hebrew data |
 | `include_cross_refs` | boolean | No | `true` | Include cross-references |
 
 #### Response
@@ -301,6 +330,7 @@ Retrieves a specific verse in multiple translations.
   "reference": {
     "book": "John",
     "book_korean": "요한복음",
+    "book_abbrev": "John",
     "chapter": 3,
     "verse": 16,
     "testament": "NT",
@@ -309,12 +339,10 @@ Retrieves a specific verse in multiple translations.
   "translations": {
     "NIV": "For God so loved the world that he gave his one and only Son...",
     "ESV": "For God so loved the world, that he gave his only Son...",
-    "개역개정": "하나님이 세상을 이처럼 사랑하사 독생자를 주셨으니...",
-    "개역한글": "하나님이 세상을 이처럼 사랑하사 독생자를 주셨으니..."
+    "KRV": "하나님이 세상을 이처럼 사랑하사 독생자를 주셨으니..."
   },
   "original": {
     "language": "greek",
-    "text": "οὕτως γὰρ ἠγάπησεν ὁ θεὸς τὸν κόσμον",
     "words": [
       {
         "word": "ἠγάπησεν",
@@ -328,54 +356,149 @@ Retrieves a specific verse in multiple translations.
   "cross_references": [
     {
       "book": "1 John",
+      "book_korean": "요한일서",
       "chapter": 4,
       "verse": 9,
       "relationship": "thematic",
-      "text_preview": "This is how God showed his love..."
+      "confidence": 0.85
     }
   ],
-  "context": {
-    "previous_verse": {
-      "chapter": 3,
-      "verse": 15,
-      "text": "..."
-    },
-    "next_verse": {
-      "chapter": 3,
-      "verse": 17,
-      "text": "..."
-    }
-  }
-}
-```
-
-**Error (404 Not Found):**
-
-```json
-{
-  "error": {
-    "code": "VERSE_NOT_FOUND",
-    "message": "Verse not found",
-    "details": {
-      "book": "John",
-      "chapter": 3,
-      "verse": 999
-    }
-  }
+  "context": null
 }
 ```
 
 #### cURL Example
 
 ```bash
-curl "http://localhost:8000/api/verse/John/3/16?translations=NIV,개역개정&include_original=true"
+curl "http://localhost:8000/api/verse/John/3/16?translations=NIV,KRV&include_original=true"
+```
+
+---
+
+### GET /api/chapter/{book}/{chapter}
+
+Retrieves all verses in a chapter.
+
+#### Request
+
+**Path Parameters:**
+
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|---------|
+| `book` | string | Book name or abbreviation | `John`, `요한복음` |
+| `chapter` | integer | Chapter number | `3` |
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `translations` | string | No | All | Comma-separated abbreviations |
+| `include_original` | boolean | No | `false` | Include Greek/Hebrew data |
+
+#### Response
+
+**Success (200 OK):**
+
+```json
+{
+  "book": "John",
+  "book_korean": "요한복음",
+  "chapter": 3,
+  "total_verses": 36,
+  "verses": [
+    {
+      "verse": 1,
+      "translations": {
+        "NIV": "Now there was a Pharisee, a man named Nicodemus...",
+        "KRV": "바리새인 중에 니고데모라 하는 사람이 있으니..."
+      }
+    }
+  ]
+}
+```
+
+Used by the frontend "± Context" button on VerseCard to display surrounding verses.
+
+#### cURL Example
+
+```bash
+curl "http://localhost:8000/api/chapter/John/3?translations=NIV,KRV"
+```
+
+---
+
+### GET /api/strongs/{strongs_number}
+
+Looks up all Bible verses containing a specific Strong's concordance number.
+
+#### Request
+
+**Path Parameters:**
+
+| Parameter | Type | Description | Example |
+|-----------|------|-------------|---------|
+| `strongs_number` | string | Strong's number | `G25`, `H157`, `g25` (case-insensitive) |
+
+**Query Parameters:**
+
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `translations` | string | No | All non-original | Comma-separated abbreviations |
+| `limit` | integer | No | `20` | Max verses to return (1-50) |
+
+#### Response
+
+**Success (200 OK):**
+
+```json
+{
+  "strongs_number": "G25",
+  "language": "greek",
+  "definition": "to love, have affection for",
+  "transliteration": "agapaō",
+  "total_count": 143,
+  "verses": [
+    {
+      "reference": {
+        "book": "Matthew",
+        "book_korean": "마태복음",
+        "chapter": 5,
+        "verse": 43,
+        "testament": "NT",
+        "genre": "gospel"
+      },
+      "translations": {
+        "NIV": "You have heard that it was said, 'Love your neighbor...'",
+        "KRV": "또 네 이웃을 사랑하고..."
+      }
+    }
+  ]
+}
+```
+
+**Error (404 Not Found):**
+```json
+{
+  "error": {
+    "code": "STRONGS_NOT_FOUND",
+    "message": "No verses found for Strong's number G99999"
+  }
+}
+```
+
+Used by the frontend "Find all verses" link on Strong's number chips in OriginalLanguage.
+
+#### cURL Example
+
+```bash
+curl "http://localhost:8000/api/strongs/G25?translations=NIV,KRV&limit=10"
 ```
 
 ---
 
 ### POST /api/themes
 
-Performs thematic search across Bible.
+Performs thematic search across the Bible.
 
 #### Request
 
@@ -386,7 +509,7 @@ Performs thematic search across Bible.
   "theme": "covenant",
   "testament": "both",
   "languages": ["en", "ko"],
-  "translations": ["NIV", "개역개정"],
+  "translations": ["NIV", "KRV"],
   "max_results": 20
 }
 ```
@@ -395,10 +518,10 @@ Performs thematic search across Bible.
 
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
-| `theme` | string | Yes | - | Theme keyword |
-| `testament` | string | No | `"both"` | `"OT"`, `"NT"`, `"both"` |
+| `theme` | string | Yes | — | Theme keyword or phrase (1-100 chars) |
+| `testament` | string | No | `"both"` | `"OT"`, `"NT"`, or `"both"` |
 | `languages` | string[] | No | `["en"]` | Language codes |
-| `translations` | string[] | Yes | - | Translation abbreviations |
+| `translations` | string[] | Yes | — | Translation abbreviations |
 | `max_results` | integer | No | `20` | Max results (1-100) |
 
 #### Response
@@ -408,12 +531,14 @@ Performs thematic search across Bible.
 ```json
 {
   "theme": "covenant",
+  "testament_filter": "both",
+  "query_time_ms": 890,
   "results": [
     {
       "reference": {...},
       "translations": {...},
       "relevance_score": 0.91,
-      "theme_keywords": ["covenant", "promise", "testament"]
+      "cross_references": [...]
     }
   ],
   "related_themes": ["promise", "agreement", "testament"],
@@ -426,11 +551,7 @@ Performs thematic search across Bible.
 ```bash
 curl -X POST http://localhost:8000/api/themes \
   -H "Content-Type: application/json" \
-  -d '{
-    "theme": "faith",
-    "testament": "NT",
-    "translations": ["NIV"]
-  }'
+  -d '{"theme": "faith", "testament": "NT", "translations": ["NIV"]}'
 ```
 
 ---
@@ -439,13 +560,11 @@ curl -X POST http://localhost:8000/api/themes \
 
 Lists all available Bible translations.
 
-#### Request
-
-**Query Parameters:**
+#### Query Parameters
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `language` | string | No | All | Filter by language code |
+| `language` | string | No | All | Filter by language code (`en`, `ko`, `he`, `gr`) |
 
 #### Response
 
@@ -460,42 +579,29 @@ Lists all available Bible translations.
       "abbreviation": "NIV",
       "language_code": "en",
       "language_name": "English",
-      "description": "Contemporary English translation...",
+      "description": null,
       "is_original_language": false,
       "verse_count": 31102
     },
     {
       "id": "b2c3d4e5-...",
-      "name": "개역개정",
-      "abbreviation": "RKV",
+      "name": "개역한글",
+      "abbreviation": "KRV",
       "language_code": "ko",
       "language_name": "한국어",
-      "description": "Revised Korean Version...",
+      "description": null,
       "is_original_language": false,
       "verse_count": 31103
-    },
-    {
-      "id": "c3d4e5f6-...",
-      "name": "SBL Greek New Testament",
-      "abbreviation": "SBLGNT",
-      "language_code": "gr",
-      "language_name": "Greek",
-      "description": "Koine Greek New Testament...",
-      "is_original_language": true,
-      "verse_count": 7957
     }
   ],
-  "total_count": 8
+  "total_count": 9
 }
 ```
 
 #### cURL Example
 
 ```bash
-# Get all translations
 curl http://localhost:8000/api/translations
-
-# Get only Korean translations
 curl "http://localhost:8000/api/translations?language=ko"
 ```
 
@@ -503,15 +609,13 @@ curl "http://localhost:8000/api/translations?language=ko"
 
 ### GET /api/books
 
-Lists all Bible books with metadata.
+Lists all 66 Bible books with metadata.
 
-#### Request
-
-**Query Parameters:**
+#### Query Parameters
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
-| `testament` | string | No | All | Filter: `"OT"`, `"NT"` |
+| `testament` | string | No | All | Filter: `"OT"` or `"NT"` |
 | `genre` | string | No | All | Filter by genre |
 
 #### Response
@@ -531,17 +635,6 @@ Lists all Bible books with metadata.
       "book_number": 1,
       "total_chapters": 50,
       "total_verses": 1533
-    },
-    {
-      "id": "e5f6g7h8-...",
-      "name": "John",
-      "name_korean": "요한복음",
-      "abbreviation": "John",
-      "testament": "NT",
-      "genre": "gospel",
-      "book_number": 43,
-      "total_chapters": 21,
-      "total_verses": 879
     }
   ],
   "total_count": 66
@@ -551,25 +644,15 @@ Lists all Bible books with metadata.
 #### cURL Example
 
 ```bash
-# Get all books
 curl http://localhost:8000/api/books
-
-# Get only NT books
-curl "http://localhost:8000/api/books?testament=NT"
-
-# Get only gospels
-curl "http://localhost:8000/api/books?genre=gospel"
+curl "http://localhost:8000/api/books?testament=NT&genre=gospel"
 ```
 
 ---
 
 ### GET /health
 
-Health check endpoint for monitoring.
-
-#### Request
-
-No parameters required.
+Health check endpoint for uptime monitoring.
 
 #### Response
 
@@ -578,7 +661,7 @@ No parameters required.
 ```json
 {
   "status": "healthy",
-  "timestamp": "2026-01-11T10:30:00Z",
+  "timestamp": "2026-03-02T10:30:00Z",
   "version": "1.0.0",
   "services": {
     "database": "healthy",
@@ -587,27 +670,25 @@ No parameters required.
   },
   "stats": {
     "total_verses": 31103,
-    "total_translations": 8,
+    "total_translations": 9,
     "cache_hit_rate": 0.67
   }
 }
 ```
 
-**Error (503 Service Unavailable):**
+**Unhealthy (503 Service Unavailable):**
 
 ```json
 {
   "status": "unhealthy",
-  "timestamp": "2026-01-11T10:30:00Z",
+  "timestamp": "2026-03-02T10:30:00Z",
+  "version": "1.0.0",
   "services": {
     "database": "unhealthy",
     "redis": "healthy",
-    "embedding_model": "error"
+    "embedding_model": "loaded"
   },
-  "errors": [
-    "Database connection failed",
-    "Embedding model not loaded"
-  ]
+  "errors": ["Database connection failed"]
 }
 ```
 
@@ -621,190 +702,154 @@ curl http://localhost:8000/health
 
 ## Code Examples
 
-### JavaScript (Axios)
+### JavaScript — Consuming Streaming Search
 
 ```javascript
-import axios from 'axios';
-
 const API_BASE = 'http://localhost:8000';
 
-// Search for verses
-async function searchVerses(query, translations = ['NIV']) {
-  try {
-    const response = await axios.post(`${API_BASE}/api/search`, {
-      query,
-      languages: ['en'],
-      translations,
-      max_results: 10
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Search error:', error.response?.data || error.message);
-    throw error;
-  }
-}
+async function* streamSearch(query, translations = ['NIV']) {
+  const response = await fetch(`${API_BASE}/api/search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, languages: ['en'], translations, max_results: 10 }),
+  });
 
-// Get specific verse
-async function getVerse(book, chapter, verse, translations = 'NIV') {
-  try {
-    const response = await axios.get(
-      `${API_BASE}/api/verse/${book}/${chapter}/${verse}`,
-      { params: { translations, include_original: true } }
-    );
-    return response.data;
-  } catch (error) {
-    console.error('Verse lookup error:', error.response?.data || error.message);
-    throw error;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop(); // incomplete line
+    for (const line of lines) {
+      if (line.trim()) yield JSON.parse(line);
+    }
   }
 }
 
 // Usage
-const results = await searchVerses('love and forgiveness', ['NIV', '개역개정']);
-const verse = await getVerse('John', 3, 16, 'NIV,ESV');
+let aiText = '';
+for await (const event of streamSearch('love and forgiveness')) {
+  if (event.type === 'results') {
+    console.log('Verses:', event.data.results);
+  } else if (event.type === 'token') {
+    aiText += event.content;
+    process.stdout.write(event.content);
+  }
+}
 ```
 
-### Python (requests)
-
-```python
-import requests
-
-API_BASE = 'http://localhost:8000'
-
-def search_verses(query: str, translations: list[str] = None):
-    """Search for verses semantically."""
-    if translations is None:
-        translations = ['NIV']
-
-    response = requests.post(
-        f'{API_BASE}/api/search',
-        json={
-            'query': query,
-            'languages': ['en'],
-            'translations': translations,
-            'max_results': 10
-        }
-    )
-    response.raise_for_status()
-    return response.json()
-
-def get_verse(book: str, chapter: int, verse: int, translations: str = 'NIV'):
-    """Get specific verse in multiple translations."""
-    response = requests.get(
-        f'{API_BASE}/api/verse/{book}/{chapter}/{verse}',
-        params={
-            'translations': translations,
-            'include_original': True
-        }
-    )
-    response.raise_for_status()
-    return response.json()
-
-# Usage
-results = search_verses('love and forgiveness', ['NIV', '개역개정'])
-verse = get_verse('John', 3, 16, 'NIV,ESV')
-```
-
-### TypeScript (fetch)
+### TypeScript — Typed API Client
 
 ```typescript
 interface SearchRequest {
   query: string;
-  languages: string[];
+  languages?: string[];
   translations: string[];
   include_original?: boolean;
   max_results?: number;
+  filters?: { testament?: string; genre?: string; books?: string[] };
+  conversation_history?: Array<{ role: 'user' | 'assistant'; content: string }>;
 }
 
-interface SearchResponse {
-  query_time_ms: number;
-  results: Array<{
-    reference: {
-      book: string;
-      chapter: number;
-      verse: number;
-    };
-    translations: Record<string, string>;
-    relevance_score: number;
-  }>;
+interface VerseResult {
+  reference: { book: string; book_korean?: string; chapter: number; verse: number; testament?: string; genre?: string };
+  translations: Record<string, string>;
+  relevance_score: number;
+  cross_references?: Array<{ book: string; chapter: number; verse: number; relationship: string; confidence?: number }>;
+  original?: { language: string; words: Array<{ word: string; transliteration?: string; strongs?: string; morphology?: string; definition?: string }> };
 }
 
-const API_BASE = 'http://localhost:8000';
+interface SearchResultsEvent {
+  type: 'results';
+  data: { query_time_ms: number; results: VerseResult[]; search_metadata: { total_results: number; cached: boolean; search_method: string } };
+}
 
-async function searchVerses(request: SearchRequest): Promise<SearchResponse> {
-  const response = await fetch(`${API_BASE}/api/search`, {
+interface TokenEvent { type: 'token'; content: string; }
+interface ErrorEvent { type: 'error'; message: string; }
+
+type SearchEvent = SearchResultsEvent | TokenEvent | ErrorEvent;
+
+async function* search(req: SearchRequest): AsyncGenerator<SearchEvent> {
+  const resp = await fetch('/api/search', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(request),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
   });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.error.message);
+  const reader = resp.body!.getReader();
+  const dec = new TextDecoder();
+  let buf = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    const lines = buf.split('\n');
+    buf = lines.pop()!;
+    for (const line of lines) {
+      if (line.trim()) yield JSON.parse(line) as SearchEvent;
+    }
   }
-
-  return response.json();
 }
-
-// Usage
-const results = await searchVerses({
-  query: '사랑과 용서',
-  languages: ['ko', 'en'],
-  translations: ['개역개정', 'NIV'],
-  max_results: 10,
-});
 ```
 
-### cURL
+### Python — requests
+
+```python
+import requests
+import json
+
+API_BASE = 'http://localhost:8000'
+
+def search_stream(query: str, translations: list[str] = None):
+    """Stream search results from the Bible RAG API."""
+    if translations is None:
+        translations = ['NIV']
+
+    with requests.post(
+        f'{API_BASE}/api/search',
+        json={'query': query, 'languages': ['en'], 'translations': translations},
+        stream=True,
+    ) as resp:
+        resp.raise_for_status()
+        for line in resp.iter_lines():
+            if line:
+                event = json.loads(line)
+                yield event
+
+# Usage
+ai_text = ''
+for event in search_stream('love and forgiveness', ['NIV', 'KRV']):
+    if event['type'] == 'results':
+        for v in event['data']['results']:
+            print(v['reference']['book'], v['reference']['chapter'], v['reference']['verse'])
+    elif event['type'] == 'token':
+        ai_text += event['content']
+        print(event['content'], end='', flush=True)
+```
+
+### cURL — Full Flow
 
 ```bash
-# Search verses
+# Streaming search (NDJSON)
 curl -X POST http://localhost:8000/api/search \
   -H "Content-Type: application/json" \
-  -d '{
-    "query": "love and forgiveness",
-    "languages": ["en"],
-    "translations": ["NIV"],
-    "max_results": 5
-  }' | jq
+  -d '{"query": "love and forgiveness", "languages": ["en"], "translations": ["NIV"], "max_results": 5}'
 
-# Get verse
-curl "http://localhost:8000/api/verse/John/3/16?translations=NIV,ESV" | jq
+# Single verse
+curl "http://localhost:8000/api/verse/John/3/16?translations=NIV,KRV&include_original=true" | jq
 
-# List translations
-curl http://localhost:8000/api/translations?language=ko | jq
+# Chapter
+curl "http://localhost:8000/api/chapter/John/3?translations=NIV" | jq
+
+# Strong's lookup
+curl "http://localhost:8000/api/strongs/G25?translations=NIV&limit=10" | jq
+
+# Translations list
+curl http://localhost:8000/api/translations | jq
 
 # Health check
 curl http://localhost:8000/health | jq
 ```
-
----
-
-## WebSocket Support (Future)
-
-For real-time features (future implementation):
-
-```javascript
-const ws = new WebSocket('ws://localhost:8000/ws/search');
-
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  console.log('Search update:', data);
-};
-
-ws.send(JSON.stringify({
-  action: 'search',
-  query: 'love',
-  translations: ['NIV']
-}));
-```
-
----
-
-## SDK Libraries (Future)
-
-Planned official SDKs:
-- **JavaScript/TypeScript**: `@bible-rag/client`
-- **Python**: `bible-rag-client`
-- **React Hooks**: `@bible-rag/react`

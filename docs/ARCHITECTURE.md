@@ -6,6 +6,7 @@ Comprehensive technical architecture documentation for the Bible RAG system.
 
 - [System Overview](#system-overview)
 - [RAG Workflow](#rag-workflow)
+- [Search Pipeline](#search-pipeline)
 - [Component Architecture](#component-architecture)
 - [Data Flow](#data-flow)
 - [Embedding Strategy](#embedding-strategy)
@@ -24,46 +25,54 @@ Comprehensive technical architecture documentation for the Bible RAG system.
 ```mermaid
 graph TB
     User["User Layer<br/>(Browser / Mobile Device)"]
-    
-    subgraph Frontend["Frontend Layer<br/>Next.js 16 + TypeScript 5.9"]
-        SearchUI["Search UI<br/>Component"]
+
+    subgraph Frontend["Frontend Layer<br/>Next.js 15 + TypeScript 5.7"]
+        ChatUI["Chat Interface<br/>(streaming NDJSON)"]
         VerseView["Verse View<br/>Component"]
         TransSelector["Translation<br/>Selector"]
     end
-    
-    subgraph Backend["Backend Layer<br/>FastAPI + Python 3.14"]
-        API["API Endpoints<br/>/api/search /api/verse /api/translations"]
-        
-        subgraph SearchEngine["Semantic Search Engine"]
+
+    subgraph Backend["Backend Layer<br/>FastAPI + Python 3.12+"]
+        API["API Endpoints<br/>/api/search /api/verse /api/strongs /health"]
+
+        subgraph SearchEngine["Hybrid Search Engine"]
+            QueryExpand["Query<br/>Expansion"]
             QueryEmbed["Query<br/>Embedding"]
             VectorSearch["Vector<br/>Search"]
-            LLMGen["LLM<br/>Generation"]
+            FullText["Full-Text<br/>Search"]
+            RRF["RRF<br/>Fusion"]
+            Reranker["Cross-Encoder<br/>Reranker"]
+            LLMGen["LLM<br/>Generation (Streamed)"]
+            QueryExpand --> QueryEmbed
             QueryEmbed --> VectorSearch
-            VectorSearch --> LLMGen
+            QueryEmbed --> FullText
+            VectorSearch --> RRF
+            FullText --> RRF
+            RRF --> Reranker
+            Reranker --> LLMGen
         end
-        
+
         API --> SearchEngine
     end
-    
+
     subgraph Database["Database Layer<br/>PostgreSQL 16 + pgvector"]
         VersesTable["Verses Table"]
         EmbedTable["Embeddings Table"]
         CrossRefs["Cross-refs Table"]
         OrigWords["Original Words"]
     end
-    
+
     subgraph Cache["Cache Layer<br/>Redis 7"]
-        QueryCache["Query Cache"]
-        EmbedCache["Embedding Cache"]
+        QueryCache["Query Cache<br/>(normalized MD5 keys)"]
     end
-    
+
     subgraph External["External Services"]
         LLM1["Google Gemini 2.5 Flash (Primary)"]
         LLM2["Groq Llama 3.3 70B (Fallback)"]
     end
-    
+
     User --> Frontend
-    Frontend -->|HTTP/REST| Backend
+    Frontend -->|"Streaming NDJSON (application/x-ndjson)"| Backend
     Backend --> Database
     Backend --> Cache
     Backend --> External
@@ -73,10 +82,11 @@ graph TB
 
 1. **Separation of Concerns**: Clear boundaries between presentation, business logic, and data layers
 2. **Stateless Backend**: All requests are independent, enabling horizontal scaling
-3. **Caching-First**: Multi-layer caching to minimize database queries and API calls
-4. **Graceful Degradation**: Fallback mechanisms for external service failures
+3. **Caching-First**: Fully normalized Redis cache keys to maximize hit rate across equivalent queries
+4. **Graceful Degradation**: Gemini → Groq LLM fallback; search results always returned even if both LLMs fail
 5. **Korean-First UX**: Typography, fonts, and text handling optimized for Korean users
-6. **Self-Hosted Embeddings**: No rate limits, one-time processing, complete control
+6. **Self-Hosted ML**: Embedding and reranking models run locally — no external API rate limits
+7. **Streaming Responses**: NDJSON streaming separates search results from AI token generation so the UI is responsive
 
 ---
 
@@ -86,26 +96,30 @@ graph TB
 
 ```mermaid
 flowchart TD
-    A["1. User Query<br/>사랑에 대한 예수님의 말씀<br/>(Jesus' teaching about love)"]
-    
-    B["2. Language Detection & Preprocessing<br/>- Detect: Korean (ko)<br/>- Normalize: Unicode NFC<br/>- Lowercase: context-aware"]
-    
-    C["3. Cache Check (Redis)<br/>Key: hash(query + translations)<br/>Hit? → Return cached results < 50ms<br/>Miss? → Continue to step 4"]
-    
-    D["4. Query Embedding<br/>Model: multilingual-e5-large (self-hosted)<br/>Input: 사랑에 대한 예수님의 말씀<br/>Output: 1024-dim vector [0.12, -0.34, 0.56, ...]<br/>Time: ~50-100ms (CPU)"]
-    
-    E["5. Vector Similarity Search<br/>(PostgreSQL + pgvector)<br/>SELECT verse_id, text,<br/>1 - (vector <=> query_vector) AS score<br/>FROM embeddings JOIN verses<br/>Index: ivfflat (lists=100)<br/>Time: ~200-500ms for 31K vectors"]
-    
-    F["6. Retrieve Context<br/>Top 10 verses (scores: 0.92, 0.89, 0.85, ...)<br/>For each verse:<br/>- Fetch translations (NIV, 개역개정, etc.)<br/>- Fetch cross-references<br/>- Fetch original language data<br/>Time: ~100-200ms (with indexes)"]
-    
-    G["7. LLM Generation (Optional)<br/>Provider: Gemini 2.5 Flash (or Groq fallback)<br/>Prompt: Based on these verses: [context]<br/>Output: Contextual explanation in Korean<br/>Time: ~500-1500ms<br/>Rate limit: 10 RPM (Gemini)"]
-    
-    H["8. Format Response<br/>{<br/>  results: [...],<br/>  ai_response: ...,<br/>  query_time_ms: 1245,<br/>  translations: {...}<br/>}"]
-    
-    I["9. Cache Result (Redis)<br/>TTL: 24 hours<br/>Increment hit_count for analytics"]
-    
-    J["10. Return to Frontend<br/>Display results with:<br/>- Verse cards with translations<br/>- Relevance scores<br/>- Cross-reference chips<br/>- Original language expansion"]
-    
+    A["1. User Query (chat)\n사랑에 대한 예수님의 말씀"]
+
+    B["2. Language Detection & Preprocessing\n- Detect: Korean (ko)\n- Normalize: Unicode NFC"]
+
+    C["3. Cache Check (Redis)\nKey: MD5(normalized query + sorted translations)\nHit? → Return cached results < 50ms\nMiss? → Continue to step 4"]
+
+    D["4. Query Expansion (LLM)\nGenerate 3 alternative phrasings\ne.g. '예수님의 사랑 가르침', '신약성경 사랑 말씀'\nTime: ~200-500ms"]
+
+    E["5. Query Embedding\nModel: multilingual-e5-large (self-hosted)\nPrefix: 'query: ' + text\nOutput: 1024-dim normalized vector\nTime: ~50-100ms (CPU)"]
+
+    F["6. Hybrid Retrieval (parallel)\na) Vector similarity (pgvector cosine)\nb) Full-text search (PostgreSQL tsvector)\nRun for original + all expanded queries\nTime: ~200-500ms"]
+
+    G["7. Reciprocal Rank Fusion (RRF)\nMerge vector + FTS rankings\nRRF(d) = Σ 1/(k + rank), k=60\nSelects top-30 candidates\nTime: < 10ms"]
+
+    H["8. Cross-Encoder Reranking\nModel: BAAI/bge-reranker-v2-m3\nScore each top-30 candidate vs original query\nTime: ~50-200ms"]
+
+    I["9. Context Retrieval\nFor each final verse:\n- Fetch translations\n- Fetch cross-references\n- Fetch original language words"]
+
+    J["10. Stream: type=results\nYield search results immediately\nFrontend renders verse cards"]
+
+    K["11. Stream: type=token\nGemini Flash (primary) or Groq (fallback)\nIncludes conversation_history context\nFrontend appends tokens to message"]
+
+    L["12. Cache Full Result (Redis, 24h TTL)"]
+
     A --> B
     B --> C
     C -->|Cache miss| D
@@ -115,16 +129,78 @@ flowchart TD
     G --> H
     H --> I
     I --> J
+    J --> K
+    K --> L
 ```
 
 **Total Time Breakdown:**
 - **Cached query**: 50-100ms
-- **Cold query (no cache)**: 1-2 seconds
+- **Cold query (no cache)**: 1.5-3 seconds
+  - Query expansion: 200-500ms
   - Embedding: 50-100ms
-  - Vector search: 200-500ms
+  - Hybrid retrieval: 200-500ms
+  - RRF + reranking: 50-200ms
   - Context retrieval: 100-200ms
-  - LLM generation: 500-1500ms
-  - Formatting & caching: 50-100ms
+  - LLM first token: 500-1500ms
+
+---
+
+## Search Pipeline
+
+The search pipeline is the core of Bible RAG. It chains multiple retrieval and ranking stages for high-quality results.
+
+### Stage 1: Query Expansion
+
+Before embedding, the LLM generates 3 alternative phrasings of the user query in the same language. Each phrasing captures a different semantic aspect. All phrasings plus the original are embedded and searched in parallel.
+
+**Config**: `enable_query_expansion = True` (default)
+
+### Stage 2: Hybrid Retrieval
+
+Two retrieval signals run concurrently for each query variant:
+
+**Vector search** (pgvector, `embeddings` table):
+```sql
+SELECT verse_id, 1 - (vector <=> $query_vector::vector) AS score
+FROM embeddings
+WHERE 1 - (vector <=> $query_vector::vector) > 0.55
+ORDER BY vector <=> $query_vector::vector
+LIMIT $n
+```
+- Similarity threshold: 0.55 (tuned for recall)
+- Prefix: `"query: "` for queries, `"passage: "` for stored verses
+
+**Full-text search** (GIN index, `verses` table):
+```sql
+SELECT v.id, ts_rank(to_tsvector('english', v.text), query) AS score
+FROM verses v, plainto_tsquery('english', $query) AS query
+WHERE to_tsvector('english', v.text) @@ query
+LIMIT $n
+```
+- Complementary signal, especially for exact phrase and keyword matches
+
+### Stage 3: Reciprocal Rank Fusion (RRF)
+
+Merges all vector and FTS result lists from all query variants:
+
+```
+RRF_score(d) = Σ_lists  1 / (k + rank(d))
+```
+
+- `k = 60` (smoothing constant, from config `rrf_k`)
+- `overretrieve_factor = 3`: fetches 3× max_results from each signal before fusion
+- Top 30 candidates forwarded to reranker
+
+### Stage 4: Cross-Encoder Reranking
+
+BAAI/bge-reranker-v2-m3 rescores each of the top-30 candidates against the **original** user query:
+
+- Multilingual cross-encoder trained for passage relevance scoring
+- Significantly more accurate than embedding cosine similarity alone
+- Final top-K returned based on reranker scores
+- Reported in response `search_metadata.search_method` as `"hybrid-rrf+rerank"`
+
+**Config**: `enable_reranking = True`, `reranker_model = "BAAI/bge-reranker-v2-m3"`, `rerank_top_n = 30`
 
 ---
 
@@ -134,481 +210,331 @@ flowchart TD
 
 #### 1. FastAPI Application (`backend/main.py`)
 
-**Responsibilities:**
-- Route handling and request validation
-- CORS configuration
-- Middleware (logging, error handling)
-- Startup/shutdown events (load embedding model)
+- Router registration: search, verses, themes, metadata, health
+- CORS: `localhost:3000` + production origins from `ALLOWED_ORIGINS` env var
+- Allowed headers: `X-Gemini-API-Key`, `X-Groq-API-Key` (user-supplied keys)
+- Lifespan context manager (startup/shutdown hooks)
 
-**Key Endpoints:**
-```python
-@app.post("/api/search")
-async def search_bible(request: SearchRequest) -> SearchResponse:
-    # Semantic search with RAG
+#### 2. Search Router (`backend/routers/search.py`)
 
-@app.get("/api/verse/{book}/{chapter}/{verse}")
-async def get_verse(...) -> VerseResponse:
-    # Fetch specific verse with translations
+Returns `StreamingResponse` with `application/x-ndjson` content type.
 
-@app.post("/api/themes")
-async def thematic_search(...) -> ThemeResponse:
-    # Search by theme/topic
-
-@app.get("/api/translations")
-async def list_translations() -> List[Translation]:
-    # Get available translations
+NDJSON event schema:
+```json
+{"type": "results", "data": {"query_time_ms": 1245, "results": [...], "search_metadata": {...}}}
+{"type": "token",   "content": "Based on these passages..."}
+{"type": "error",   "message": "..."}
 ```
 
-#### 2. Embedding Module (`backend/embeddings.py`)
+User API keys accepted via headers:
+```http
+X-Gemini-API-Key: AIza...
+X-Groq-API-Key: gsk_...
+```
+Keys forwarded to LLM calls, never persisted.
 
-**Responsibilities:**
-- Load self-hosted sentence-transformers model
-- Generate embeddings for verses (one-time)
-- Generate embeddings for queries (runtime)
-- Model caching in memory
+#### 3. Search Module (`backend/search.py`)
 
-**Implementation:**
+Core hybrid search implementation:
+- Vector search + full-text search (parallel per query variant)
+- RRF fusion
+- Cross-encoder reranking via `reranker.py`
+- Context retrieval (translations, cross-refs, original words)
+- Redis cache check/write (normalized key)
+
+Reported `search_method` values:
+- `"semantic"` — vector only (FTS unavailable)
+- `"hybrid-rrf"` — vector + FTS merged, no reranker
+- `"hybrid-rrf+rerank"` — full pipeline
+
+#### 4. Embedding Module (`backend/embeddings.py`)
+
 ```python
-from sentence_transformers import SentenceTransformer
-from functools import lru_cache
-
 @lru_cache(maxsize=1)
 def get_embedding_model() -> SentenceTransformer:
-    """Load model once and cache in memory."""
     return SentenceTransformer('intfloat/multilingual-e5-large')
 
-def embed_text(text: str) -> np.ndarray:
-    """Generate 1024-dim embedding for text."""
-    model = get_embedding_model()
-    return model.encode(text, normalize_embeddings=True)
+def embed_query(text: str) -> np.ndarray:
+    return get_embedding_model().encode("query: " + text, normalize_embeddings=True)
+
+def embed_passage(text: str) -> np.ndarray:
+    return get_embedding_model().encode("passage: " + text, normalize_embeddings=True)
 ```
 
-**Model Specifications:**
-- Name: `intfloat/multilingual-e5-large`
-- Dimensions: 1024
-- Max sequence length: 512 tokens
-- Languages: 100+ (optimized for English, Korean, Chinese, Spanish)
-- Size: ~2GB download
-- Performance: ~50-100 verses/second on modern CPU
+**Model specs**: 1024 dimensions, 100+ languages, ~2GB download, ~50-100 verses/sec on CPU
 
-#### 3. Vector Search Module (`backend/search.py`)
+#### 5. Reranker (`backend/reranker.py`)
 
-**Responsibilities:**
-- Execute cosine similarity search in PostgreSQL
-- Filter by translation, testament, genre
-- Sort by relevance score
-- Pagination support
-
-**SQL Query:**
-```sql
-SELECT
-    v.id, v.text, v.chapter, v.verse,
-    b.name, b.testament,
-    1 - (e.vector <=> $1::vector) AS similarity_score
-FROM embeddings e
-JOIN verses v ON e.verse_id = v.id
-JOIN books b ON v.book_id = b.id
-WHERE v.translation_id = ANY($2::uuid[])
-  AND (1 - (e.vector <=> $1::vector)) > 0.7  -- Similarity threshold
-ORDER BY e.vector <=> $1::vector  -- Cosine distance (ascending)
-LIMIT $3
-```
-
-**Index Strategy:**
-- ivfflat index on `embeddings.vector`
-- `lists` parameter: 100 (optimal for 31K vectors)
-- Index build time: 5-10 minutes (one-time)
-- Search time: O(log n) with index
-
-#### 4. Cache Module (`backend/cache.py`)
-
-**Responsibilities:**
-- Query result caching
-- Embedding caching for common queries
-- Cache invalidation and TTL management
-- Hit count analytics
-
-**Cache Layers:**
 ```python
-# Layer 1: In-memory (LRU cache)
-@lru_cache(maxsize=1000)
-def get_cached_embedding(query: str) -> np.ndarray:
-    return embed_text(query)
+@lru_cache(maxsize=1)
+def get_reranker_model() -> CrossEncoder:
+    return CrossEncoder('BAAI/bge-reranker-v2-m3')
 
-# Layer 2: Redis (query results)
-def cache_search_results(
-    query_hash: str,
-    results: dict,
-    ttl: int = 86400  # 24 hours
-):
-    redis_client.setex(query_hash, ttl, json.dumps(results))
+def rerank(query: str, passages: list[str]) -> list[float]:
+    model = get_reranker_model()
+    pairs = [(query, p) for p in passages]
+    return model.predict(pairs).tolist()
 ```
 
-**Cache Keys:**
+**Model specs**: Multilingual cross-encoder, takes (query, passage) pairs, outputs relevance scores
+
+#### 6. LLM Module (`backend/llm.py`)
+
+- `expand_query()`: generates 3 alternative search phrasings via LLM
+- `detect_language()`: returns `"en"` or `"ko"` from text heuristics
+- `generate_contextual_response_stream()`: async generator yielding tokens
+- Rate limiter: rolling window per provider (Gemini: 10 RPM, Groq: 30 RPM)
+- Conversation history support: `conversation_history` list passed to LLM context
+
+**Primary → Fallback**: Gemini Flash → Groq Llama 3.3 70B
+
+#### 7. Verses Router (`backend/routers/verses.py`)
+
+Three endpoints:
+- `GET /api/verse/{book}/{chapter}/{verse}` — single verse lookup
+- `GET /api/chapter/{book}/{chapter}` — full chapter (all verses)
+- `GET /api/strongs/{strongs_number}` — all verses containing a Strong's number
+
+#### 8. Cache Module (`backend/cache.py`)
+
+Cache key generation:
 ```python
-query_hash = hashlib.md5(
-    f"{query}:{','.join(sorted(translations))}:{filters}".encode()
+key_data = {
+    "query": query.lower().strip(),
+    "translations": sorted(translations),
+    "filters": {k: v for k, v in sorted((filters or {}).items())},
+}
+cache_key = hashlib.md5(
+    json.dumps(key_data, sort_keys=True).encode()
 ).hexdigest()
 ```
-
-#### 5. Database Module (`backend/database.py`)
-
-**Responsibilities:**
-- SQLAlchemy ORM models
-- Database connection pooling
-- Query builders
-- Migration support (Alembic)
-
-**Models:**
-```python
-class Translation(Base):
-    __tablename__ = "translations"
-    id: Mapped[UUID] = mapped_column(primary_key=True)
-    name: Mapped[str]
-    abbreviation: Mapped[str]
-    language_code: Mapped[str]
-    verses: Mapped[List["Verse"]] = relationship(back_populates="translation")
-
-class Verse(Base):
-    __tablename__ = "verses"
-    id: Mapped[UUID] = mapped_column(primary_key=True)
-    translation_id: Mapped[UUID] = mapped_column(ForeignKey("translations.id"))
-    book_id: Mapped[UUID] = mapped_column(ForeignKey("books.id"))
-    chapter: Mapped[int]
-    verse: Mapped[int]
-    text: Mapped[str]
-    embedding: Mapped["Embedding"] = relationship(back_populates="verse")
-
-class Embedding(Base):
-    __tablename__ = "embeddings"
-    id: Mapped[UUID] = mapped_column(primary_key=True)
-    verse_id: Mapped[UUID] = mapped_column(ForeignKey("verses.id"))
-    vector: Mapped[Vector] = mapped_column(Vector(1024))  # pgvector type
-    model_version: Mapped[str]
-```
+TTL: 24 hours (`CACHE_TTL` setting)
 
 ### Frontend Components
 
-#### 1. Search Interface (`frontend/src/app/page.tsx`)
+#### 1. Chat Interface (`frontend/src/app/page.tsx`)
 
-**Features:**
-- Auto-detecting language (English/Korean)
-- Real-time search suggestions
-- Translation selector
-- Filter options (testament, genre)
+- Chat-style conversation with persistent message history
+- Streaming NDJSON consumption: renders verse cards on `type: "results"`, appends AI tokens on `type: "token"`
+- `useSearchParams()` for `?strongs=` deep-link support (wrapped in `<Suspense>`)
+- Translation selector, filter panel
 
-#### 2. Verse Display (`frontend/src/components/VerseCard.tsx`)
+#### 2. Chat Message Bubble (`frontend/src/components/ChatMessageBubble.tsx`)
 
-**Features:**
-- Parallel translation view
-- Expandable original language
-- Cross-reference navigation
-- Copy/share functionality
+- Renders user and AI chat bubbles
+- Post-streaming: calls `parseVerseText()` from `verseParser.tsx` to convert verse references ("John 3:16") into clickable `VerseCard` inline components
+- Shows streaming cursor during token reception
 
-#### 3. Korean Optimization (`frontend/src/components/KoreanToggle.tsx`)
+#### 3. Verse Card (`frontend/src/components/VerseCard.tsx`)
 
-**Features:**
-- Hanja (한자) display toggle
-- Romanization (로마자) display
-- Font size adjustment
-- Line height optimization (1.8-2.0)
+- Parallel translation display
+- Expandable original language section (Greek/Hebrew interlinear)
+- Cross-references grouped by type (quotation / parallel / allusion / thematic) with confidence qualifiers
+- **Context expand**: "± Context" button fetches `GET /api/chapter/{book}/{chapter}`, slices ±2 surrounding verses, renders them dimmed above/below main verse
+
+#### 4. Inline Verse Parser (`frontend/src/lib/verseParser.tsx`)
+
+- Regex-parses AI response text for verse references after streaming completes
+- Replaces matched references with inline `<VerseCard>` components
+
+#### 5. API Key Settings (`frontend/src/components/APIKeySettings.tsx`)
+
+- UI for entering personal Gemini / Groq API keys
+- Keys held in component state, sent as request headers per search
+- Never stored server-side or in localStorage
 
 ---
 
 ## Data Flow
 
-### Data Ingestion Flow
+### Data Ingestion
 
 ```
-1. Bible API/Dataset
+1. Bible API / Dataset
    ↓
-2. Fetch & Parse (data_ingestion.py)
+2. scripts/data_ingestion.py
+   ├─ Fetch 9 translations (NIV, ESV, NASB, KJV, WEB, KRV, NKRV, RNKSV, ...)
    ├─ Normalize text (Unicode NFC for Korean)
-   ├─ Parse book/chapter/verse structure
-   └─ Extract metadata (testament, genre)
+   └─ Insert into translations / books / verses tables
    ↓
-3. Database Insert
-   ├─ translations table
-   ├─ books table
-   └─ verses table (31,000+ rows)
+3. scripts/original_ingestion.py
+   ├─ OpenGNT Greek (~137,500 words)
+   ├─ OSHB/WLC Hebrew (~299,487 words)
+   ├─ scripts/ingest_aramaic.py Aramaic (~4,913 words)
+   └─ Insert into original_words table
    ↓
-4. Embedding Generation (embeddings.py)
-   ├─ Load multilingual-e5-large model
-   ├─ Batch process (32 verses at a time)
-   ├─ Generate 1024-dim vectors
-   └─ Insert into embeddings table
+4. scripts/embeddings.py
+   ├─ Load multilingual-e5-large
+   ├─ Batch process 32 verses at a time
+   ├─ Prefix: "passage: " + verse text
+   └─ Insert 1024-dim normalized vectors into embeddings table
    ↓
-5. Index Creation
-   ├─ CREATE INDEX ... USING ivfflat
-   └─ Build cross-reference links
-   ↓
-6. Ready for Queries
+5. Index creation
+   ├─ ivfflat index on embeddings.vector
+   ├─ GIN index on verses.text (tsvector)
+   └─ Cross-reference links (63,779+) loaded
 ```
 
 ### Query Flow
 
 ```
-User Input
+User types message (chat)
    ↓
-Frontend (Next.js)
-   ├─ Validate input
-   ├─ Detect language
-   └─ Send POST /api/search
+POST /api/search
+{query, translations, filters, conversation_history}
+Headers: X-Gemini-API-Key (optional), X-Groq-API-Key (optional)
    ↓
-Backend API (FastAPI)
-   ├─ Check Redis cache
-   ├─ [Cache miss] → Generate query embedding
-   ├─ Vector similarity search (PostgreSQL)
-   ├─ Retrieve context (verses, translations, cross-refs)
-   ├─ [Optional] LLM generation (Gemini/Groq)
-   ├─ Format response
-   └─ Cache result (Redis)
+Backend
+   ├─ Check Redis cache → HIT: stream cached results
+   ├─ MISS: expand_query() → 3 alternative phrasings
+   ├─ embed_query() for each phrasing
+   ├─ Vector search + FTS (parallel)
+   ├─ RRF fusion → top-30 candidates
+   ├─ Cross-encoder reranking
+   ├─ Fetch translations / cross-refs / original words
+   ├─ Stream: {"type": "results", "data": {...}}
+   ├─ Stream: {"type": "token", "content": "..."}  (LLM tokens)
+   └─ Cache full result (Redis, 24h)
    ↓
-Frontend Display
-   ├─ Render verse cards
-   ├─ Display translations
-   ├─ Show cross-references
-   └─ Expandable original language
+Frontend
+   ├─ Renders verse cards on results event
+   ├─ Appends AI tokens as they arrive
+   └─ parseVerseText() after streaming → inline citations
 ```
 
 ---
 
 ## Embedding Strategy
 
-### Model Selection Rationale
+### Model: intfloat/multilingual-e5-large
 
-**Why multilingual-e5-large?**
-
-| Criterion | Score | Notes |
-|-----------|-------|-------|
-| Multilingual Support | 10/10 | 100+ languages, excellent Korean |
-| Korean Quality | 10/10 | Trained on Korean corpus |
-| English Quality | 9/10 | SOTA on English benchmarks |
-| Embedding Dimension | 9/10 | 1024-dim (high quality) |
-| Self-Hostable | 10/10 | No API, no rate limits |
-| Model Size | 8/10 | 2GB (manageable) |
-| CPU Performance | 9/10 | 50-100 verses/sec on modern CPU |
-| GPU Performance | 10/10 | 500+ verses/sec on mid-range GPU |
-
-**Alternatives Considered:**
-- `all-mpnet-base-v2`: English-only, lower dimension (768)
-- `paraphrase-multilingual-mpnet-base-v2`: Slower, lower quality
-- OpenAI text-embedding-3-large: API costs, rate limits
-
-### Embedding Generation
-
-**Batch Processing:**
-```python
-batch_size = 32  # Optimal for CPU
-for i in range(0, len(verses), batch_size):
-    batch_texts = verses[i:i+batch_size]
-    embeddings = model.encode(
-        batch_texts,
-        batch_size=batch_size,
-        show_progress_bar=True,
-        normalize_embeddings=True  # For cosine similarity
-    )
-    # Insert into database
-```
-
-**Performance:**
-- CPU (M1 Mac): ~100 verses/second → 31,000 verses in ~5 minutes
-- CPU (Intel i7): ~50 verses/second → 31,000 verses in ~10 minutes
-- GPU (NVIDIA RTX 3060): ~500 verses/second → 31,000 verses in ~1 minute
+| Criterion | Details |
+|-----------|---------|
+| Dimensions | 1024 |
+| Max sequence length | 512 tokens |
+| Languages | 100+ (optimized for English and Korean) |
+| Download size | ~2GB |
+| CPU throughput | ~50-100 passages/second |
+| Query prefix | `"query: "` |
+| Passage prefix | `"passage: "` |
 
 ### Normalization
 
-All embeddings are L2-normalized for cosine similarity:
+All embeddings are L2-normalized so cosine similarity equals dot product:
 ```python
-embedding = embedding / np.linalg.norm(embedding)
+model.encode(text, normalize_embeddings=True)
 ```
 
-This allows using efficient dot product instead of full cosine calculation:
-```
-cosine_similarity(a, b) = dot(a, b) / (||a|| * ||b||)
-# With normalized vectors: ||a|| = ||b|| = 1
-cosine_similarity(a, b) = dot(a, b)
-```
+This allows the `<=>` (cosine distance) pgvector operator to be used efficiently.
 
 ---
 
 ## Vector Search Implementation
 
-### pgvector Index
+### ivfflat Index
 
-**Index Type:** ivfflat (Inverted File with Flat compression)
-
-**Creation:**
 ```sql
-CREATE INDEX idx_embeddings_vector
-ON embeddings
-USING ivfflat (vector vector_cosine_ops)
-WITH (lists = 100);
+CREATE INDEX idx_embeddings_vector ON embeddings
+    USING ivfflat (vector vector_cosine_ops)
+    WITH (lists = 100);
 ```
 
-**Parameters:**
-- `lists = 100`: Number of clusters (√N for N=31K)
-- `vector_cosine_ops`: Cosine distance operator
+- `lists = 100`: ~√31000 clusters, suitable for the current dataset
+- Build time: 5-10 minutes (one-time)
+- Recall@10: ~95%
 
-**Trade-offs:**
-- More lists → Faster build, slower search
-- Fewer lists → Slower build, faster search
-- Optimal for 31K vectors: 100-150 lists
+### Full-Text Index
 
-### Distance Metrics
-
-**pgvector supports:**
-- `<->`: L2 distance (Euclidean)
-- `<#>`: Inner product
-- `<=>`: Cosine distance (1 - cosine similarity)
-
-**We use cosine distance (`<=>`):**
 ```sql
--- Distance: 0 (identical) to 2 (opposite)
-SELECT 1 - (vector <=> query_vector) AS similarity
-FROM embeddings
-ORDER BY vector <=> query_vector
-LIMIT 10;
+CREATE INDEX idx_verses_text_search ON verses
+    USING gin(to_tsvector('english', text));
 ```
 
-### Search Performance
+Supports `plainto_tsquery` and `to_tsquery` for keyword matching.
 
-| Vectors | Index | Search Time | Recall@10 |
-|---------|-------|-------------|-----------|
-| 31,000 | ivfflat (100) | 200-500ms | 95%+ |
-| 31,000 | No index (seq scan) | 3-5s | 100% |
-| 100,000 | ivfflat (316) | 500-800ms | 95%+ |
+### Performance Targets
 
-**Recall:** Percentage of true top-K results found (vs. exact search)
+| Operation | Target | Notes |
+|-----------|--------|-------|
+| Cache hit | 50-100ms | Redis |
+| Vector search (31K) | 200-500ms | ivfflat |
+| Full-text search | 50-150ms | GIN |
+| RRF fusion | < 10ms | In-memory |
+| Reranking (top-30) | 50-200ms | bge-reranker-v2-m3 |
+| Context retrieval | 100-200ms | DB JOINs |
+| LLM first token | 500-1500ms | Gemini/Groq |
 
 ---
 
 ## Caching Architecture
 
-### Multi-Layer Cache
+### Cache Key Normalization
+
+```python
+key_data = {
+    "query": query.lower().strip(),
+    "translations": sorted(translations),         # order-independent
+    "filters": {k: v for k, v in sorted((filters or {}).items())},
+}
+cache_key = hashlib.md5(
+    json.dumps(key_data, sort_keys=True).encode()
+).hexdigest()
+```
+
+### Cache Layers
 
 ```
 Request
    ↓
-┌──────────────────────────────┐
-│ Layer 1: In-Memory (Python)  │
-│ - LRU cache (1000 items)     │
-│ - Query embeddings           │
-│ - Model instance             │
-│ - Hit time: < 1ms            │
-└──────────┬───────────────────┘
-           │ Cache miss
-           ↓
-┌──────────────────────────────┐
-│ Layer 2: Redis               │
-│ - Query results (24h TTL)    │
-│ - Common queries             │
-│ - Hit time: 10-50ms          │
-└──────────┬───────────────────┘
-           │ Cache miss
-           ↓
-┌──────────────────────────────┐
-│ Layer 3: Database Query      │
-│ - Vector search              │
-│ - Context retrieval          │
-│ - Hit time: 200-500ms        │
-└──────────────────────────────┘
+Layer 1: In-Memory (lru_cache)
+   - Embedding model instance
+   - Reranker model instance
+   - Hit time: < 1ms
+   ↓ miss
+Layer 2: Redis
+   - Full serialized search results
+   - TTL: 24h
+   - Hit time: 10-50ms
+   ↓ miss
+Layer 3: Full Pipeline
+   - Expansion + embed + hybrid search + rerank + LLM
+   - Time: 1.5-3s
 ```
 
 ### Cache Invalidation
 
-**Strategies:**
-- **Time-based (TTL)**: 24 hours for query results
-- **Event-based**: Invalidate on translation updates
-- **LRU eviction**: Automatic for in-memory cache
-
-**Cache Key Design:**
-```python
-def generate_cache_key(
-    query: str,
-    translations: List[str],
-    filters: dict
-) -> str:
-    key_data = {
-        "query": query.lower().strip(),
-        "translations": sorted(translations),
-        "filters": filters
-    }
-    return hashlib.md5(
-        json.dumps(key_data, sort_keys=True).encode()
-    ).hexdigest()
-```
-
-### Cache Analytics
-
-**Tracked metrics:**
-- Hit rate: `cache_hits / (cache_hits + cache_misses)`
-- Popular queries: `ORDER BY hit_count DESC LIMIT 100`
-- Cache size: `redis-cli INFO memory`
+- **TTL expiry**: 24 hours (automatic)
+- **Manual**: `redis-cli FLUSHDB` (development)
 
 ---
 
 ## Rate Limiting & Fallbacks
 
-### LLM API Rate Limits
+### LLM Rate Limits
 
-**Gemini 2.5 Flash (Primary):**
-- 10 RPM (requests per minute)
-- 20 RPD (requests per day)
-- Free tier
+| Provider | RPM Limit | Config Key |
+|----------|-----------|------------|
+| Gemini 2.5 Flash | 10 | `GEMINI_RPM` |
+| Groq Llama 3.3 70B | 30 | `GROQ_RPM` |
 
-**Groq Llama 3.3 70B (Fallback):**
-- 30 RPM
-- Free tier
+### Fallback Behavior
 
-### Fallback Strategy
-
-```python
-async def generate_response(context: str, query: str) -> str:
-    try:
-        # Try Gemini first
-        response = await call_gemini(context, query)
-        return response
-    except RateLimitError:
-        logger.warning("Gemini rate limit hit, falling back to Groq")
-        try:
-            response = await call_groq(context, query)
-            return response
-        except RateLimitError:
-            logger.error("Both LLM services rate limited")
-            # Return results without AI-generated response
-            return None
+```
+Gemini within rate limit?
+    YES → stream Gemini tokens
+    NO  → Groq within rate limit?
+              YES → stream Groq tokens
+              NO  → skip LLM, stream results only
 ```
 
-### Rate Limiter Implementation
+Search results are **always streamed** via the `"results"` event regardless of LLM availability.
 
-```python
-from collections import deque
-from datetime import datetime, timedelta
+### User-Provided Keys
 
-class RateLimiter:
-    def __init__(self, max_requests: int, window_seconds: int):
-        self.max_requests = max_requests
-        self.window = timedelta(seconds=window_seconds)
-        self.requests = deque()
-
-    async def acquire(self):
-        now = datetime.now()
-        # Remove old requests outside window
-        while self.requests and now - self.requests[0] > self.window:
-            self.requests.popleft()
-
-        if len(self.requests) >= self.max_requests:
-            # Rate limited
-            wait_time = (self.requests[0] + self.window - now).total_seconds()
-            raise RateLimitError(f"Wait {wait_time:.1f}s")
-
-        self.requests.append(now)
-
-# Usage
-gemini_limiter = RateLimiter(max_requests=10, window_seconds=60)
-groq_limiter = RateLimiter(max_requests=30, window_seconds=60)
-```
+Users can supply their own API keys via the frontend settings panel:
+- Sent as `X-Gemini-API-Key` / `X-Groq-API-Key` request headers
+- Take priority over server-level keys
+- Never logged or stored server-side
 
 ---
 
@@ -616,202 +542,58 @@ groq_limiter = RateLimiter(max_requests=30, window_seconds=60)
 
 ### Horizontal Scaling
 
-**Stateless Backend:**
-- FastAPI servers are stateless
-- Can scale to N instances behind load balancer
-- Session data stored in Redis (shared)
-
-**Load Balancing:**
-```nginx
-upstream bible_rag_backend {
-    server backend1:8000;
-    server backend2:8000;
-    server backend3:8000;
-}
-
-server {
-    location /api/ {
-        proxy_pass http://bible_rag_backend;
-    }
-}
-```
+FastAPI is stateless — multiple instances can run behind a load balancer sharing the same Redis cache and PostgreSQL database. Note that the embedding model (~4GB RAM) and reranker (~500MB RAM) are loaded per-process.
 
 ### Database Scaling
 
-**Read Replicas:**
-- Primary: Write operations (rare: admin updates)
-- Replicas: Read operations (search queries)
-- Connection pooling: 20 connections per instance
+- SQLAlchemy async engine with connection pool
+- Reads dominate (search, verse lookup); writes rare (ingestion only)
+- Partitioning by translation is available but not needed until 500K+ verses
 
-**Partitioning Strategies:**
-- Partition by translation (NIV, ESV, 개역개정)
-- Partition by testament (OT, NT)
-- Not needed until 1M+ verses
+### Free Tier Limits
 
-### Redis Scaling
-
-**Redis Cluster:**
-- Shard by cache key hash
-- 3-node cluster for high availability
-- Automatic failover
-
-**Memory Management:**
-- Max memory: 4GB
-- Eviction policy: `allkeys-lru`
-- TTL: 24 hours for query cache
-
-### Cost-Efficient Scaling
-
-**Free Tier Limits:**
-- Supabase: 500MB DB (sufficient for 100K+ verses)
-- Vercel: 100GB bandwidth/month
-- Upstash Redis: 10K commands/day
-
-**Paid Scaling Path:**
-- Supabase Pro ($25/mo): 8GB DB, more connections
-- Railway: $5/month credit for backend
-- Upstash Pay-as-you-go: $0.20/100K commands
+| Service | Limit |
+|---------|-------|
+| Supabase | 500MB DB |
+| Vercel | 100GB bandwidth/month |
+| Upstash Redis | 10K commands/day |
 
 ---
 
 ## Performance Optimization
 
-### Backend Optimizations
+### Backend
 
-1. **Connection Pooling:**
-```python
-engine = create_engine(
-    DATABASE_URL,
-    pool_size=20,
-    max_overflow=10,
-    pool_pre_ping=True
-)
-```
+1. **Model preloading**: `lru_cache` ensures embedding and reranker models load once per process
+2. **Async I/O**: All DB queries use SQLAlchemy `AsyncSession`
+3. **Batch DB queries**: Verse context retrieved in single JOIN queries
+4. **Streaming**: Frontend receives verse results before LLM finishes → low perceived latency
 
-2. **Async I/O:**
-```python
-@app.post("/api/search")
-async def search(request: SearchRequest):
-    # Parallel execution
-    results = await asyncio.gather(
-        fetch_verses(query),
-        fetch_cross_references(verse_ids),
-        fetch_original_language(verse_ids)
-    )
-```
+### Frontend
 
-3. **Batch Processing:**
-```python
-# Fetch multiple verses in one query
-verses = session.query(Verse).filter(
-    Verse.id.in_(verse_ids)
-).all()
-```
+1. **Streaming consumption**: Parses NDJSON line-by-line; renders verse cards immediately
+2. **Deferred citation parsing**: `parseVerseText()` runs after streaming ends to avoid mid-stream re-renders
+3. **Font optimization**: Noto Sans KR via Next.js `next/font/google` with automatic subsetting
+4. **Code splitting**: Next.js App Router automatic route-based splitting
 
-### Frontend Optimizations
+### Database
 
-1. **Code Splitting:**
-```typescript
-// Next.js automatic code splitting by route
-const VerseDetail = dynamic(() => import('@/components/VerseDetail'))
-```
-
-2. **Image Optimization:**
-```typescript
-import Image from 'next/image'
-// Automatic WebP conversion, lazy loading
-<Image src="/logo.png" width={200} height={200} alt="Logo" />
-```
-
-3. **Font Optimization:**
-```typescript
-import { Noto_Sans_KR } from 'next/font/google'
-const notoSansKr = Noto_Sans_KR({ subsets: ['korean'] })
-// Automatic font subsetting
-```
-
-### Database Optimizations
-
-1. **Indexes:**
-```sql
-CREATE INDEX idx_verses_book_chapter ON verses(book_id, chapter);
-CREATE INDEX idx_verses_translation ON verses(translation_id);
-CREATE INDEX idx_cross_refs_verse ON cross_references(verse_id);
-```
-
-2. **Query Optimization:**
-```sql
--- Use EXISTS instead of COUNT for boolean checks
-SELECT EXISTS(SELECT 1 FROM verses WHERE id = $1);
-
--- Use LIMIT for pagination
-SELECT * FROM verses ORDER BY id OFFSET $1 LIMIT $2;
-```
-
-3. **Materialized Views (future):**
-```sql
--- Pre-aggregate popular queries
-CREATE MATERIALIZED VIEW popular_verses AS
-SELECT verse_id, COUNT(*) as view_count
-FROM query_cache
-GROUP BY verse_id
-ORDER BY view_count DESC
-LIMIT 100;
-```
+1. **ivfflat index**: ~95% recall at high query speed
+2. **GIN index**: Fast full-text keyword matching
+3. **Composite indexes**: `(book_id, chapter)` for chapter lookups
+4. **ANALYZE**: Run after bulk data ingestion to update planner statistics
 
 ---
 
-## Security Considerations
+## Security
 
 ### API Security
 
-1. **Rate Limiting:**
-```python
-from slowapi import Limiter
-limiter = Limiter(key_func=get_remote_address)
-
-@app.post("/api/search")
-@limiter.limit("10/minute")
-async def search(...):
-    pass
-```
-
-2. **Input Validation:**
-```python
-class SearchRequest(BaseModel):
-    query: str = Field(..., min_length=1, max_length=500)
-    translations: List[str] = Field(..., min_items=1, max_items=10)
-    max_results: int = Field(10, ge=1, le=100)
-```
-
-3. **CORS Configuration:**
-```python
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["https://yourdomain.com"],
-    allow_methods=["GET", "POST"],
-    allow_headers=["*"],
-)
-```
+- **CORS**: Explicit origin allowlist; production origins via `ALLOWED_ORIGINS` env var
+- **Input validation**: All request bodies validated via Pydantic (`min_length`, `max_length`, `pattern` constraints)
+- **User API keys**: Accepted only via headers, never logged or persisted
 
 ### Database Security
 
-1. **SQL Injection Prevention:**
-```python
-# Use parameterized queries (SQLAlchemy ORM)
-verses = session.query(Verse).filter(
-    Verse.id == verse_id  # NOT f"... WHERE id = {verse_id}"
-).all()
-```
-
-2. **Connection Security:**
-```python
-DATABASE_URL = "postgresql://user:pass@host:5432/db?sslmode=require"
-```
-
-3. **Secrets Management:**
-```python
-from dotenv import load_dotenv
-load_dotenv()
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")  # Never hardcode
-```
+- **Parameterized queries**: All SQL uses SQLAlchemy ORM or `text()` with bound parameters
+- **Secrets**: API keys in `.env` (gitignored); production via platform environment variables

@@ -46,8 +46,10 @@ The Bible RAG database serves as the central data store for:
 - Mature, open-source RDBMS
 - Excellent JSON support (for flexible metadata)
 - Strong ACID compliance
-- Advanced indexing capabilities
+- Advanced indexing capabilities (ivfflat for vectors, GIN for full-text)
 - Active community and ecosystem
+
+**Initial schema** is defined in `backend/init.sql` and applied automatically by the Docker Compose setup.
 
 ### pgvector Extension
 
@@ -350,11 +352,13 @@ INSERT INTO cross_references (verse_id, related_verse_id, relationship_type, con
 ```
 
 **Relationship Types:**
-- `parallel`: Same event in different gospels (e.g., Matt 5:3 || Luke 6:20)
+- `parallel`: Same event in different gospels (e.g., Matt 5:3 ∥ Luke 6:20)
 - `prophecy-fulfillment`: OT prophecy fulfilled in NT
 - `quotation`: Direct quote from another passage
 - `allusion`: Indirect reference
 - `thematic`: Related theme/concept
+
+**Note**: Cross-references are sourced from OpenBible.info (63,779+ connections, CC BY 4.0) and loaded during data ingestion.
 
 ---
 
@@ -481,9 +485,10 @@ DELETE FROM translations WHERE abbreviation = 'NIV';
 
 **Primary Goals:**
 1. Fast verse lookups by book/chapter/verse
-2. Efficient vector similarity search
-3. Quick JOIN operations on foreign keys
-4. Fast filtering by translation/testament/genre
+2. Efficient vector similarity search (ivfflat)
+3. Fast full-text keyword search (GIN)
+4. Quick JOIN operations on foreign keys
+5. Fast filtering by translation/testament/genre
 
 ### Index Types
 
@@ -870,14 +875,14 @@ Supabase Pro provides automatic point-in-time recovery:
 
 ### Storage Requirements
 
-| Component | Size (31K verses) | Notes |
-|-----------|-------------------|-------|
-| Verses table | ~50MB | Text data |
-| Embeddings table | ~120MB | 1024-dim vectors |
-| Indexes | ~150MB | All indexes combined |
-| Cross-references | ~10MB | Estimated 50K refs |
-| Original words | ~30MB | Estimated 200K words |
-| **Total** | **~360MB** | For single translation set |
+| Component | Size | Notes |
+|-----------|------|-------|
+| Verses table | ~50MB/translation | Text data (×9 translations ≈ 450MB) |
+| Embeddings table | ~120MB | 1024-dim vectors (one embedding per verse) |
+| Indexes | ~150MB | ivfflat + GIN + B-tree combined |
+| Cross-references | ~10MB | 63,779 links |
+| Original words | ~80MB | 442,413 words |
+| **Total** | **~810MB** | For 9 translations + all original language data |
 
 ### Optimization Tips
 

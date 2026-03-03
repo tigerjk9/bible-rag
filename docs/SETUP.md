@@ -28,7 +28,7 @@ Complete installation and configuration guide for local development.
 
 **Recommended Requirements:**
 - CPU: 8+ cores (Intel i7/AMD Ryzen 7, Apple M1/M2/M3/M4)
-- RAM: 16GB
+- RAM: 16GB (embedding model ~4GB + reranker ~500MB + OS + DB)
 - Storage: 50GB SSD
 - GPU: Optional (speeds up embedding 3-5x, but not required)
 
@@ -42,21 +42,19 @@ Complete installation and configuration guide for local development.
 
 ## Prerequisites Installation
 
-### 1. Python 3.14+ (or 3.12+)
+### 1. Python 3.12+
 
 **macOS (using Homebrew):**
 ```bash
-brew install python@3.14
-python3.14 --version  # Verify installation
-# Alternative: brew install python@3.12
+brew install python@3.12
+python3.12 --version  # Verify installation
 ```
 
 **Linux (Ubuntu/Debian):**
 ```bash
 sudo apt update
-sudo apt install python3.14 python3.14-venv python3.14-dev
-python3.14 --version
-# Alternative: python3.12
+sudo apt install python3.12 python3.12-venv python3.12-dev
+python3.12 --version
 ```
 
 **Windows:**
@@ -64,28 +62,26 @@ python3.14 --version
 - During installation, check "Add Python to PATH"
 - Verify: `python --version`
 
-### 2. Node.js 24 LTS (or 22 LTS)
+### 2. Node.js 22 LTS (or 20 LTS)
 
 **macOS:**
 ```bash
-brew install node@24
-node --version  # Should be 24.x (LTS)
+brew install node@22
+node --version  # Should be 22.x (LTS)
 npm --version
-# Alternative: brew install node@22
 ```
 
 **Linux:**
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt-get install -y nodejs
 node --version
 npm --version
-# Alternative: setup_22.x for Node.js 22 LTS
 ```
 
 **Windows:**
 - Download from [nodejs.org](https://nodejs.org/)
-- Install LTS version (24.x)
+- Install LTS version (22.x)
 - Verify in PowerShell: `node --version`
 
 ### 3. Docker and Docker Compose
@@ -93,29 +89,20 @@ npm --version
 **macOS:**
 ```bash
 # Install Docker Desktop from https://www.docker.com/products/docker-desktop
-# Or use Homebrew
+# Or via Homebrew
 brew install --cask docker
-
-# Start Docker Desktop application
-# Verify installation
+# Start Docker Desktop, then verify:
 docker --version
-docker-compose --version
+docker compose version
 ```
 
 **Linux:**
 ```bash
-# Install Docker
 curl -fsSL https://get.docker.com -o get-docker.sh
 sudo sh get-docker.sh
-
-# Install Docker Compose
 sudo apt-get install docker-compose-plugin
-
-# Add user to docker group (to run without sudo)
 sudo usermod -aG docker $USER
 newgrp docker
-
-# Verify
 docker --version
 docker compose version
 ```
@@ -127,21 +114,9 @@ docker compose version
 
 ### 4. Git
 
-**macOS:**
-```bash
-brew install git
-git --version
-```
-
-**Linux:**
-```bash
-sudo apt install git
-git --version
-```
-
-**Windows:**
-- Download from [git-scm.com](https://git-scm.com/)
-- Install with default options
+**macOS:** `brew install git`
+**Linux:** `sudo apt install git`
+**Windows:** Download from [git-scm.com](https://git-scm.com/)
 
 ---
 
@@ -150,34 +125,28 @@ git --version
 ### 1. Clone Repository
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/bible-rag.git
+git clone https://github.com/calebyhan/bible-rag.git
 cd bible-rag
-
-# Verify directory structure
-ls -la
-# Should see: backend/, frontend/, docs/, docker-compose.yml, README.md, etc.
+ls -la  # Should see: backend/, frontend/, docs/, docker-compose.yml, README.md
 ```
 
 ### 2. Start Infrastructure Services
 
-**Create and start PostgreSQL + Redis:**
-
 ```bash
-# Start services in detached mode
-docker-compose up -d
+# Start PostgreSQL + Redis in detached mode
+docker compose up -d
 
 # Verify services are running
-docker-compose ps
+docker compose ps
 
 # Expected output:
-# NAME                COMMAND                  STATUS
-# bible-rag-postgres  "docker-entrypoint.s…"   Up
-# bible-rag-redis     "docker-entrypoint.s…"   Up
+# NAME                  STATUS
+# bible-rag-postgres    Up
+# bible-rag-redis       Up
 
 # Check logs if needed
-docker-compose logs postgres
-docker-compose logs redis
+docker compose logs postgres
+docker compose logs redis
 ```
 
 **Default Service Ports:**
@@ -186,36 +155,24 @@ docker-compose logs redis
 
 **Stop services when needed:**
 ```bash
-docker-compose down  # Stops and removes containers (data persists in volumes)
-docker-compose down -v  # Stops and removes containers AND volumes (deletes all data)
+docker compose down      # Stops containers (data persists in volumes)
+docker compose down -v   # Stops containers AND deletes volumes (loses all data)
 ```
 
 ### 3. Database Initialization
 
-**Connect to PostgreSQL:**
+The schema is created automatically when you first run the backend. You can verify connectivity with:
+
 ```bash
-# Using psql (if installed locally)
-psql -h localhost -p 5432 -U bible_user -d bible_rag
-# Password: bible_password (from docker-compose.yml)
-
-# Or using Docker exec
+# Connect via Docker exec
 docker exec -it bible-rag-postgres psql -U bible_user -d bible_rag
-```
 
-**Enable pgvector extension:**
-```sql
+# Enable pgvector (if not done by docker-compose)
 CREATE EXTENSION IF NOT EXISTS vector;
 
--- Verify installation
-SELECT * FROM pg_extension WHERE extname = 'vector';
-```
-
-**Create initial schema:**
-```sql
--- This will be handled by backend/database.py when you run the application
--- But you can verify the database is accessible
-\dt  -- List tables (should be empty initially)
-\q   -- Quit psql
+# Verify
+\dt    -- list tables (empty initially)
+\q     -- quit
 ```
 
 ---
@@ -227,169 +184,110 @@ SELECT * FROM pg_extension WHERE extname = 'vector';
 ```bash
 cd backend
 
-# Create virtual environment
-python3.10 -m venv venv
+# Create virtual environment (use .venv, not venv)
+python3.12 -m venv .venv
 
 # Activate virtual environment
 # macOS/Linux:
-source venv/bin/activate
+source .venv/bin/activate
 
 # Windows:
-venv\Scripts\activate
+.venv\Scripts\activate
 
-# Verify activation (should see (venv) in prompt)
-which python  # Should point to venv/bin/python
+# Verify activation (should see (.venv) in prompt)
+which python  # Should point to .venv/bin/python
 ```
 
 ### 2. Install Dependencies
 
 ```bash
-# Ensure venv is activated (you should see (venv) in your prompt)
-
-# Upgrade pip
+# Ensure .venv is activated
 pip install --upgrade pip
-
-# Install all dependencies
 pip install -r requirements.txt
 
-# This will install:
-# - FastAPI, Uvicorn (API server)
-# - SQLAlchemy, psycopg2 (database)
+# Key packages installed:
+# - fastapi, uvicorn (API server)
+# - sqlalchemy, psycopg2-binary, asyncpg (database)
 # - pgvector (vector extension client)
 # - redis (caching)
-# - sentence-transformers (embedding model)
+# - sentence-transformers, torch (embedding model)
 # - google-generativeai, groq (LLM APIs)
-# - And more...
+# - pydantic, pydantic-settings (data validation)
 
-# Verify key packages
-pip list | grep -E "fastapi|sqlalchemy|sentence-transformers"
+# Expected installation time: 5-15 minutes (downloads ~3GB including PyTorch)
 ```
-
-**Expected Installation Time:** 5-10 minutes (downloads ~2GB of packages)
 
 ### 3. Configure Environment Variables
 
 ```bash
-# Copy example environment file
 cp .env.example .env
-
-# Edit .env file
-nano .env  # or use your preferred editor (vim, code, etc.)
+nano .env  # or: code .env, vim .env
 ```
 
-**Update the following variables in `.env`:**
+**Update `.env`:**
 
 ```env
-# Database Configuration
+# Database
 DATABASE_URL=postgresql://bible_user:bible_password@localhost:5432/bible_rag
 POSTGRES_USER=bible_user
 POSTGRES_PASSWORD=bible_password
 POSTGRES_DB=bible_rag
 
-# Redis Configuration
+# Redis
 REDIS_URL=redis://localhost:6379/0
 
 # API Keys (get these from respective services)
-GEMINI_API_KEY=your_gemini_api_key_here  # Get from https://ai.google.dev/
-GROQ_API_KEY=your_groq_api_key_here      # Get from https://console.groq.com/
+GEMINI_API_KEY=your_gemini_api_key_here  # https://ai.google.dev/
+GROQ_API_KEY=your_groq_api_key_here      # https://console.groq.com/
 
-# Embedding Model Settings
+# Embedding model
 EMBEDDING_MODEL=intfloat/multilingual-e5-large
 EMBEDDING_DIMENSION=1024
 
-# Cache Settings
-CACHE_TTL=86400  # 24 hours in seconds
+# Reranker
+RERANKER_MODEL=BAAI/bge-reranker-v2-m3
 
-# Search Settings
-MAX_RESULTS_DEFAULT=10
-VECTOR_SEARCH_LISTS=100  # ivfflat index parameter
+# Cache
+CACHE_TTL=86400
+
+# Search tuning (defaults are production-ready)
+SIMILARITY_THRESHOLD=0.55
+OVERRETRIEVE_FACTOR=3
+RRF_K=60
+ENABLE_QUERY_EXPANSION=true
+ENABLE_HYBRID_SEARCH=true
+ENABLE_RERANKING=true
+RERANK_TOP_N=30
 ```
 
 **Get API Keys:**
 
 1. **Gemini API Key** (Free):
    - Visit https://ai.google.dev/
-   - Sign in with Google account
-   - Click "Get API Key"
-   - Create new API key
-   - Copy and paste into `.env`
+   - Sign in with Google account → "Get API Key" → Create new key
 
 2. **Groq API Key** (Free):
    - Visit https://console.groq.com/
-   - Sign up for free account
-   - Go to API Keys section
-   - Create new API key
-   - Copy and paste into `.env`
+   - Sign up → API Keys → Create new key
 
-### 4. Initialize Database Schema
+### 4. Test Backend Server
 
 ```bash
-# Ensure venv is activated and you're in backend/ directory
-# Ensure PostgreSQL is running (docker-compose up -d)
-
-# Run database initialization
-python -c "from database import init_db; init_db()"
-
-# Or create a simple init script
-cat > init_db.py << 'EOF'
-from database import init_db
-
-if __name__ == "__main__":
-    print("Initializing database schema...")
-    init_db()
-    print("Database initialized successfully!")
-EOF
-
-python init_db.py
-```
-
-**Verify schema creation:**
-```bash
-# Connect to database
-docker exec -it bible-rag-postgres psql -U bible_user -d bible_rag
-
-# List all tables
-\dt
-
-# Expected tables:
-# - translations
-# - books
-# - verses
-# - embeddings
-# - cross_references
-# - original_words
-# - query_cache
-
-\q  # Quit
-```
-
-### 5. Test Backend Server
-
-```bash
-# Start development server
+# Ensure .venv is activated and PostgreSQL is running
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 
 # Expected output:
-# INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
-# INFO:     Started reloader process
-# INFO:     Started server process
-# INFO:     Waiting for application startup.
+# INFO:     Uvicorn running on http://0.0.0.0:8000
 # INFO:     Application startup complete.
 ```
 
 **Test API in another terminal:**
 ```bash
-# Health check
+# Health check (will show unhealthy until data is ingested)
 curl http://localhost:8000/health
 
-# Expected: {"status": "healthy"}
-
-# API documentation
-open http://localhost:8000/docs  # Opens Swagger UI
-
-# Or visit manually in browser:
-# http://localhost:8000/docs - Swagger UI
-# http://localhost:8000/redoc - ReDoc
+# API docs
+open http://localhost:8000/docs  # Swagger UI
 ```
 
 ---
@@ -399,271 +297,160 @@ open http://localhost:8000/docs  # Opens Swagger UI
 ### 1. Install Dependencies
 
 ```bash
-# Open new terminal window/tab
+# New terminal tab/window
 cd frontend
-
-# Install Node.js packages
 npm install
 
-# This will install:
-# - Next.js 14, React 18
-# - TypeScript
-# - Tailwind CSS
-# - Axios (HTTP client)
-# - Korean fonts (Noto Sans KR)
+# Key packages:
+# - next 15, react 19, react-dom 19
+# - typescript 5.7
+# - tailwindcss 3
+# - axios
+# - aromanize (Korean romanization)
 
-# Expected installation time: 2-5 minutes
+# Expected time: 1-3 minutes
 ```
 
 ### 2. Configure Environment Variables
 
 ```bash
-# Copy example environment file
 cp .env.example .env.local
-
-# Edit .env.local
 nano .env.local
 ```
 
 **Update `.env.local`:**
 ```env
-# API Configuration
 NEXT_PUBLIC_API_URL=http://localhost:8000
-
-# App Configuration
 NEXT_PUBLIC_APP_NAME=Bible RAG
-NEXT_PUBLIC_DEFAULT_LANGUAGE=en
-NEXT_PUBLIC_SUPPORTED_LANGUAGES=en,ko
-
-# Feature Flags (optional)
-NEXT_PUBLIC_ENABLE_ORIGINAL_LANGUAGE=true
-NEXT_PUBLIC_ENABLE_CROSS_REFERENCES=true
-NEXT_PUBLIC_ENABLE_KOREAN_HANJA=true
 ```
 
-### 3. Configure Korean Fonts
-
-**Verify Tailwind configuration includes Korean fonts:**
-
-```javascript
-// tailwind.config.js
-module.exports = {
-  theme: {
-    extend: {
-      fontFamily: {
-        sans: ['var(--font-noto-sans-kr)', 'system-ui', 'sans-serif'],
-        korean: ['Noto Sans KR', '나눔고딕', 'sans-serif'],
-      },
-      lineHeight: {
-        'korean': '1.8',  // Optimized for Korean readability
-      },
-    },
-  },
-};
-```
-
-### 4. Start Development Server
+### 3. Start Development Server
 
 ```bash
-# Ensure backend is running in another terminal
-# Start Next.js development server
 npm run dev
 
 # Expected output:
-# > bible-rag-frontend@0.1.0 dev
-# > next dev
-#
-# - ready started server on 0.0.0.0:3000, url: http://localhost:3000
-# - event compiled client and server successfully
-# - wait compiling...
+# ▲ Next.js 15.x.x
+# - Local:    http://localhost:3000
+# - Ready in 2.1s
 ```
 
-**Access the application:**
-- Open browser: http://localhost:3000
-- You should see the Bible RAG home page with search bar
+Open http://localhost:3000 in your browser. You should see the chat interface.
 
 ---
 
 ## Data Ingestion
 
-### Overview
-Ingest Bible text from various sources into the database.
+Data ingestion scripts live in `backend/scripts/`. Run each from the `backend/` directory with `.venv` activated.
 
-### 1. Bible Translation Sources
-
-**English Translations:**
-- NIV, ESV, NASB via Bible API (https://scripture.api.bible)
-- Public domain: KJV from various sources
-
-**Korean Translations:**
-- 개역개정 (Revised Korean Version)
-- 개역한글, 새번역, 공동번역
-- Sources: Korean Bible Society APIs, open datasets
-
-**Original Languages:**
-- Hebrew: Open Scripture Hebrew Bible
-- Greek: SBL Greek New Testament, Berean Interlinear
-- Strong's Concordance data
-
-### 2. Run Data Ingestion Script
+### Step 1: Ingest Bible Translations
 
 ```bash
 cd backend
-source venv/bin/activate  # Ensure venv is activated
+source .venv/bin/activate
 
-# Run data ingestion
-python data_ingestion.py
+python scripts/data_ingestion.py
 
-# Expected process:
-# 1. Fetching English translations (NIV, ESV, NASB)...
-# 2. Fetching Korean translations (개역개정, etc.)...
-# 3. Fetching original language data...
-# 4. Parsing and normalizing text...
-# 5. Inserting into database...
-# 6. Building cross-references...
-# 7. Complete! Inserted XX,XXX verses across X translations
+# This script:
+# 1. Fetches 9 translations (NIV, ESV, NASB, KJV, WEB, KRV, RNKSV, ...)
+# 2. Normalizes Unicode (NFC for Korean)
+# 3. Inserts into translations, books, and verses tables
+# 4. Loads cross-reference data (63,779+ links)
+#
+# Expected duration: 30-90 minutes (network-dependent)
+# Expected output: ~31,000 verses × 9 translations
 ```
 
-**Expected Duration:** 10-30 minutes depending on internet speed and data sources
+### Step 2: Ingest Original Languages
 
-### 3. Verify Data Ingestion
+```bash
+python scripts/original_ingestion.py
+
+# This script:
+# 1. Downloads OpenGNT Greek NT data
+# 2. Downloads OSHB/WLC Hebrew OT data
+# 3. Runs scripts/ingest_aramaic.py for Aramaic portions
+# 4. Inserts 442,413 words into original_words table
+#
+# Expected duration: ~1-5 minutes
+```
+
+### Step 3: Verify Ingestion
 
 ```bash
 # Connect to database
 docker exec -it bible-rag-postgres psql -U bible_user -d bible_rag
 
-# Check translations
-SELECT * FROM translations;
-
-# Check verse count
+# Check verse counts per translation
 SELECT t.abbreviation, COUNT(v.id) as verse_count
 FROM translations t
 LEFT JOIN verses v ON t.id = v.translation_id
-GROUP BY t.abbreviation;
+GROUP BY t.abbreviation
+ORDER BY t.abbreviation;
 
-# Expected output:
-#  abbreviation | verse_count
-# --------------+-------------
-#  NIV          | 31102
-#  ESV          | 31086
-#  개역개정      | 31103
-#  ...
+# Check original language coverage
+SELECT language, COUNT(*) as word_count
+FROM original_words
+GROUP BY language;
 
-# Check sample verse
-SELECT * FROM verses LIMIT 1;
-
-\q  # Quit
+# Quit
+\q
 ```
 
 ---
 
 ## Embedding Generation
 
-### Overview
-Generate vector embeddings for all verses using the multilingual-e5-large model.
+Embeddings must be generated once for each stored verse. This is the most time-consuming setup step.
 
 **Important Notes:**
-- **One-time process**: Only needs to be run once (or when adding new translations)
-- **Duration**: 15-30 minutes for full Bible (~31,000 verses) on modern CPU
-- **GPU acceleration**: If you have CUDA GPU, it will be ~3-5 minutes
-- **Disk space**: Model download is ~2GB, embeddings storage ~120MB
+- One-time process (only rerun when adding new translations)
+- First run downloads the model (~2GB from Hugging Face)
+- The reranker model (~500MB) is downloaded lazily on first query
 
-### 1. Generate Embeddings
+### Generate Embeddings
 
 ```bash
 cd backend
-source venv/bin/activate
+source .venv/bin/activate
 
-# Run embedding generation
-python embeddings.py
+python scripts/embeddings.py
 
 # Expected output:
 # Loading embedding model 'intfloat/multilingual-e5-large'...
-# Downloading model (first run only, ~2GB)...
-# Model loaded successfully!
+# Downloading model (first run, ~2GB)...
+# Model loaded!
 # Fetching verses from database...
 # Found 31,103 verses to embed
 # Generating embeddings in batches of 32...
-# Batch 1/972: Processing verses 1-32... [Progress bar]
-# Batch 2/972: Processing verses 33-64... [Progress bar]
-# ...
-# Embedding generation complete!
-# Total time: 23m 15s
-# Average: 22.3 verses/second
+# [Progress bar...]
+# Embedding generation complete! Total time: ~20-30 min
 ```
 
-**Progress Indicators:**
-- Real-time progress bar
-- Estimated time remaining
-- Verses processed per second
-- Current batch number
+**Performance estimates:**
+- Apple M-series CPU: ~5 minutes
+- Intel i7 CPU: ~20-30 minutes
+- NVIDIA GPU (CUDA): ~1-2 minutes
 
-### 2. Monitor System Resources
-
-**While embedding generation is running (optional):**
+### Build Vector Index
 
 ```bash
-# Monitor CPU/memory usage
-# macOS:
-top -o cpu
-
-# Linux:
-htop  # or: top
-
-# Check Python process
-ps aux | grep python
-
-# Expected resource usage:
-# - CPU: 200-400% (utilizing multiple cores)
-# - Memory: 4-8GB (model loaded in RAM)
-# - Disk I/O: Moderate (writing to database)
-```
-
-### 3. Verify Embeddings
-
-```bash
-# Connect to database
-docker exec -it bible-rag-postgres psql -U bible_user -d bible_rag
-
-# Check embedding count
-SELECT COUNT(*) FROM embeddings;
--- Expected: 31,103 (or total verse count)
-
-# Check embedding dimensions
-SELECT verse_id, vector_dims(vector) FROM embeddings LIMIT 1;
--- Expected: 1024
-
-# Verify model version
-SELECT DISTINCT model_version FROM embeddings;
--- Expected: multilingual-e5-large
-
-\q
-```
-
-### 4. Build Vector Index (for Performance)
-
-```bash
-# Connect to database
 docker exec -it bible-rag-postgres psql -U bible_user -d bible_rag
 ```
 
 ```sql
--- Build ivfflat index for fast similarity search
--- This may take 5-10 minutes for 31K vectors
+-- Create ivfflat index (takes 5-10 minutes for 31K vectors)
 CREATE INDEX IF NOT EXISTS idx_embeddings_vector
 ON embeddings
 USING ivfflat (vector vector_cosine_ops)
 WITH (lists = 100);
 
--- Verify index creation
+-- Verify
 \d embeddings
 
--- Test similarity search performance
-EXPLAIN ANALYZE
-SELECT verse_id, 1 - (vector <=> '[0.1, 0.2, ...]'::vector) AS similarity
-FROM embeddings
-ORDER BY vector <=> '[0.1, 0.2, ...]'::vector
-LIMIT 10;
+-- Run ANALYZE to update query planner statistics
+ANALYZE embeddings;
+ANALYZE verses;
 
 \q
 ```
@@ -674,300 +461,179 @@ LIMIT 10;
 
 ### End-to-End Test
 
-**1. Ensure all services are running:**
+**1. Check all services are running:**
 ```bash
-# Terminal 1: Check Docker services
-docker-compose ps
-# Both postgres and redis should be "Up"
+# Docker services
+docker compose ps       # postgres + redis should be "Up"
 
-# Terminal 2: Backend should be running
-# You should see: uvicorn main:app --reload
+# Terminal 1: Backend
+uvicorn main:app --reload
 
-# Terminal 3: Frontend should be running
-# You should see: next dev
+# Terminal 2: Frontend
+cd frontend && npm run dev
 ```
 
 **2. Test API endpoints:**
 ```bash
 # Health check
-curl http://localhost:8000/health
+curl http://localhost:8000/health | python3 -m json.tool
 
 # List translations
-curl http://localhost:8000/api/translations
+curl http://localhost:8000/api/translations | python3 -m json.tool
 
-# Search test (with jq for pretty JSON)
+# Streaming search test (pipe through jq or process line by line)
 curl -X POST http://localhost:8000/api/search \
   -H "Content-Type: application/json" \
-  -d '{
-    "query": "love and forgiveness",
-    "languages": ["en"],
-    "translations": ["NIV"],
-    "max_results": 5
-  }' | jq
-
-# Expected: JSON response with verse results
+  -d '{"query":"love and forgiveness","languages":["en"],"translations":["NIV"],"max_results":3}'
 ```
 
 **3. Test frontend:**
 1. Open http://localhost:3000
 2. Enter search query: "What does Jesus say about love?"
-3. Verify:
-   - Search executes without errors
-   - Results display with verses
-   - Translations show correctly
-   - Korean text (if selected) renders properly
-4. Click on a verse to view details
-5. Check cross-references display
+3. Verify verse cards appear with results
+4. Verify AI response streams in below the cards
+5. Click "± Context" on a verse card — surrounding verses should appear
+6. Click a Strong's number — "Find all verses" should open
 
-**4. Test Korean functionality:**
+**4. Test Korean search:**
 1. Search: "사랑에 대한 예수님의 말씀"
-2. Verify Korean text displays correctly
-3. Check Hanja display (if enabled)
-4. Test romanization toggle
-
-### Performance Check
-
-**Measure query response time:**
-```bash
-# Install hey (HTTP load testing tool)
-# macOS: brew install hey
-# Linux: go install github.com/rakyll/hey@latest
-
-# Test search endpoint
-hey -n 10 -c 1 -m POST \
-  -H "Content-Type: application/json" \
-  -d '{"query":"love","languages":["en"],"translations":["NIV"]}' \
-  http://localhost:8000/api/search
-
-# Expected:
-# - Average response time: < 2 seconds (first query)
-# - Cached queries: < 500ms
-```
+2. Verify Korean text displays correctly with proper spacing
+3. Enable Hanja/romanization toggle
 
 ---
 
 ## Troubleshooting
 
-### Common Issues
+### Docker Services Won't Start
 
-#### 1. Docker Services Won't Start
-
-**Symptom:** `docker-compose up -d` fails
-
-**Solutions:**
 ```bash
-# Check if Docker is running
+# Check Docker is running
 docker info
 
-# Check port conflicts (5432, 6379)
-lsof -i :5432  # macOS/Linux
-netstat -ano | findstr :5432  # Windows
+# Check port conflicts (5432 or 6379)
+lsof -i :5432   # macOS/Linux
+lsof -i :6379
 
-# If ports are in use, stop conflicting services or change ports in docker-compose.yml
+# If in use, stop conflicting services or change ports in docker-compose.yml
 
-# Reset Docker completely
-docker-compose down -v
-docker system prune -a  # WARNING: Removes all Docker data
-docker-compose up -d
+# Hard reset Docker
+docker compose down -v
+docker system prune -f
+docker compose up -d
 ```
 
-#### 2. Cannot Connect to PostgreSQL
+### Cannot Connect to PostgreSQL
 
-**Symptom:** `psycopg2.OperationalError: could not connect to server`
-
-**Solutions:**
 ```bash
-# Verify PostgreSQL is running
-docker-compose ps postgres
+# Verify running
+docker compose ps postgres
 
 # Check logs
-docker-compose logs postgres
+docker compose logs postgres
 
-# Test connection
+# Test connectivity
 docker exec -it bible-rag-postgres pg_isready -U bible_user
 
 # Verify DATABASE_URL in backend/.env
-cat backend/.env | grep DATABASE_URL
-
-# Try connecting manually
-docker exec -it bible-rag-postgres psql -U bible_user -d bible_rag
+grep DATABASE_URL backend/.env
 ```
 
-#### 3. pgvector Extension Error
+### pgvector Extension Error
 
-**Symptom:** `ERROR: extension "vector" is not available`
-
-**Solutions:**
 ```bash
-# Connect to database
 docker exec -it bible-rag-postgres psql -U bible_user -d bible_rag
-
-# Install extension
+```
+```sql
 CREATE EXTENSION vector;
-
-# If error persists, check PostgreSQL version
-SELECT version();
--- pgvector requires PostgreSQL 11+
-
-# Rebuild Docker image with pgvector
-docker-compose down
-docker-compose build --no-cache
-docker-compose up -d
+-- If error: rebuild Docker image
+-- docker compose build --no-cache && docker compose up -d
 ```
 
-#### 4. Embedding Model Download Fails
+### Embedding Model Download Fails
 
-**Symptom:** `OSError: Can't load model 'intfloat/multilingual-e5-large'`
-
-**Solutions:**
 ```bash
-# Check internet connection
+# Check internet connectivity
 ping huggingface.co
 
-# Set HuggingFace cache directory (if disk space issues)
-export HF_HOME=/path/to/large/disk/huggingface_cache
-python embeddings.py
+# Set custom HF cache directory (if disk space issues)
+export HF_HOME=/path/to/large/disk/hf_cache
+python scripts/embeddings.py
 
-# Download model manually
-python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('intfloat/multilingual-e5-large')"
-
-# Use alternative mirror (China)
+# Use HF mirror (China/restricted networks)
 export HF_ENDPOINT=https://hf-mirror.com
-python embeddings.py
+python scripts/embeddings.py
 ```
 
-#### 5. Out of Memory During Embedding
+### Out of Memory During Embedding
 
-**Symptom:** `Killed` or `MemoryError` during embedding generation
-
-**Solutions:**
 ```bash
-# Reduce batch size in embeddings.py
-# Edit embeddings.py and change:
-batch_size = 32  # Reduce to 16 or 8
+# The embedding model requires ~4GB RAM. Reduce batch size if needed:
+# Edit scripts/embeddings.py: batch_size = 16  (default 32)
 
-# Monitor memory usage
-# macOS:
+# Monitor memory (macOS)
 vm_stat | grep "Pages free"
 
-# Linux:
+# Linux
 free -h
 
-# Close other applications to free memory
-
-# If still failing, generate embeddings in chunks
-python embeddings.py --start-index 0 --end-index 10000
-python embeddings.py --start-index 10000 --end-index 20000
-# etc.
+# Generate in chunks if needed
+python scripts/embeddings.py --start-index 0 --end-index 10000
+python scripts/embeddings.py --start-index 10000 --end-index 20000
 ```
 
-#### 6. Frontend Won't Start
+### Frontend Won't Start
 
-**Symptom:** `npm run dev` fails
-
-**Solutions:**
 ```bash
 # Clear Next.js cache
 rm -rf frontend/.next
 rm -rf frontend/node_modules
+cd frontend && npm install && npm run dev
 
-# Reinstall dependencies
-cd frontend
-npm install
+# Check Node.js version (must be 18+, recommend 22)
+node --version
 
-# Check for port conflicts (3000)
-lsof -i :3000  # macOS/Linux
-netstat -ano | findstr :3000  # Windows
-
-# Run on different port
-npm run dev -- -p 3001
-
-# Check Node.js version
-node --version  # Should be 18+
+# Check port conflicts
+lsof -i :3000
+# Run on different port: npm run dev -- -p 3001
 ```
 
-#### 7. Korean Text Not Displaying
+### Korean Text Not Displaying
 
-**Symptom:** Korean characters show as boxes or gibberish
-
-**Solutions:**
 ```bash
-# Verify font installation
-# In browser DevTools > Network, check for Noto Sans KR font loading
-
-# Clear Next.js cache and rebuild
+# Verify font loading in browser DevTools > Network (filter: "noto")
+# Clear Next.js cache
 rm -rf frontend/.next
 npm run dev
 
-# Check font configuration in tailwind.config.js
-# Ensure Korean fonts are in fontFamily
-
-# Test with browser DevTools > Elements
-# Check computed font-family includes Korean fonts
+# Check browser computed font-family on Korean element
+# Must include Noto Sans KR
 ```
 
-#### 8. API Rate Limit Errors
+### API Rate Limit Errors (LLM)
 
-**Symptom:** `429 Too Many Requests` from Gemini/Groq
+The backend falls back from Gemini → Groq automatically. If both are rate-limited, verse results still return but without an AI response.
 
-**Solutions:**
+To bypass rate limits, provide your own API keys via the settings panel in the UI, or set `GEMINI_API_KEY` / `GROQ_API_KEY` in `backend/.env`.
+
+### Streaming Search Returns No Results
+
 ```bash
-# Check API key validity
-curl -H "Authorization: Bearer $GEMINI_API_KEY" https://generativelanguage.googleapis.com/v1beta/models
+# Check embeddings exist
+docker exec -it bible-rag-postgres psql -U bible_user -d bible_rag -c "SELECT COUNT(*) FROM embeddings;"
 
-# Verify rate limits in code
-# backend/search.py should have fallback to Groq
+# Check ivfflat index exists
+docker exec -it bible-rag-postgres psql -U bible_user -d bible_rag \
+  -c "\d embeddings"
 
-# Test with reduced query rate
-# Add delays between requests
-
-# Use local LLM as fallback (Ollama)
-# Install: curl -fsSL https://ollama.com/install.sh | sh
-# Run: ollama pull llama3.2
-# Update backend/.env: LOCAL_LLM_ENABLED=true
+# Re-run embedding generation if count is 0
+python scripts/embeddings.py
 ```
 
 ### Getting Help
 
-**1. Check Logs:**
-```bash
-# Docker services
-docker-compose logs
-
-# Backend
-# Should be visible in terminal running uvicorn
-
-# Frontend
-# Should be visible in terminal running npm run dev
-
-# Database
-docker exec -it bible-rag-postgres tail -f /var/log/postgresql/postgresql-*.log
-```
-
-**2. Enable Debug Mode:**
-
-**Backend:**
-```python
-# In backend/main.py
-app = FastAPI(debug=True)
-
-# Or set environment variable
-export DEBUG=1
-uvicorn main:app --reload --log-level debug
-```
-
-**Frontend:**
-```bash
-# In frontend/.env.local
-NEXT_PUBLIC_DEBUG=true
-
-npm run dev
-```
-
-**3. Community Support:**
-- GitHub Issues: https://github.com/yourusername/bible-rag/issues
-- Documentation: See other docs/ files
-- Email: your.email@example.com
+1. **Check logs**: `docker compose logs`, uvicorn terminal output, Next.js terminal output
+2. **Enable debug logging**: set `DEBUG=true` in `backend/.env`, restart uvicorn with `--log-level debug`
+3. **GitHub Issues**: https://github.com/calebyhan/bible-rag/issues
 
 ---
 
@@ -975,7 +641,7 @@ npm run dev
 
 After successful setup:
 
-1. **Read Architecture Documentation**: [docs/ARCHITECTURE.md](ARCHITECTURE.md)
-2. **Explore API**: [docs/API.md](API.md)
-3. **Learn Features**: [docs/FEATURES.md](FEATURES.md)
-4. **Deploy to Production**: [docs/DEPLOYMENT.md](DEPLOYMENT.md)
+1. **Explore the API**: [docs/API.md](API.md)
+2. **Learn the features**: [docs/FEATURES.md](FEATURES.md)
+3. **Understand the architecture**: [docs/ARCHITECTURE.md](ARCHITECTURE.md)
+4. **Deploy to production**: [docs/DEPLOYMENT.md](DEPLOYMENT.md)
