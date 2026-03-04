@@ -39,7 +39,7 @@ export interface CrossReference {
 export interface VerseContext {
   chapter: number;
   verse: number;
-  text: string;
+  translations: Record<string, string>;
 }
 
 // --- Search Types ---

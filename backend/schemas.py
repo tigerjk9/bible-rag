@@ -170,7 +170,7 @@ class VerseContext(BaseModel):
 
     chapter: int
     verse: int
-    text: str
+    translations: dict[str, str]
 
 
 class SearchResult(BaseModel):

@@ -19,10 +19,14 @@ from sqlalchemy import bindparam, Integer, Float
 from cache import get_cache
 from config import get_settings
 from database import Book, CrossReference, Embedding, OriginalWord, Translation, Verse
-from embeddings import embed_query
+from embeddings import embed_query, embed_query_async
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
+
+# Cached at startup by main.py lifespan to avoid a COUNT(*) on every request.
+# None means unknown (startup check failed); will fall back to per-request check.
+_has_embeddings: bool | None = None
 
 
 async def fulltext_search_verses(
@@ -87,12 +91,12 @@ async def fulltext_search_verses(
                 b.abbreviation as book_abbrev,
                 b.testament,
                 b.genre,
-                ts_rank(to_tsvector('english', v.text), plainto_tsquery('english', :search_query)) as rank
+                ts_rank_cd(to_tsvector('english', v.text), websearch_to_tsquery('english', :search_query)) as rank
             FROM verses v
             JOIN books b ON v.book_id = b.id
             WHERE v.translation_id = ANY(:translation_ids)
                 AND (
-                    to_tsvector('english', v.text) @@ plainto_tsquery('english', :search_query)
+                    to_tsvector('english', v.text) @@ websearch_to_tsquery('english', :search_query)
                     OR v.text ILIKE '%' || :query_like || '%'
                 )
     """
@@ -379,9 +383,7 @@ async def get_verse_by_reference(
         response["original"] = await get_original_words(db, first_verse.id)
 
     # Get context (previous and next verses)
-    # Use first selected translation for context
-    context_translation = results[0][1].abbreviation if results else None
-    response["context"] = await get_verse_context(db, book_obj.id, chapter, verse, context_translation)
+    response["context"] = await get_verse_context(db, book_obj.id, chapter, verse, translations or [])
 
     # Cache the result
     if use_cache:
@@ -395,7 +397,7 @@ async def get_verse_context(
     book_id: UUID,
     chapter: int,
     verse: int,
-    translation_abbr: Optional[str] = None,
+    translation_abbrs: list[str] | None = None,
 ) -> dict:
     """Get surrounding context for a verse.
 
@@ -404,50 +406,48 @@ async def get_verse_context(
         book_id: Book ID
         chapter: Chapter number
         verse: Verse number
-        translation_abbr: Translation abbreviation to use (uses first if None)
+        translation_abbrs: Translation abbreviations to include (uses first available if empty)
 
     Returns:
-        Dictionary with previous and next verse info
+        Dictionary with previous and next verse info, each with a translations dict
     """
-    context = {"previous": None, "next": None}
+    context: dict = {"previous": None, "next": None}
 
     # Convert UUID to string for SQLite compatibility in tests
     book_id_value = str(book_id) if isinstance(book_id, UUID) else book_id
 
-    # Get translation for context
-    if translation_abbr:
-        translation = (await db.execute(select(Translation).where(Translation.abbreviation == translation_abbr))).scalar_one_or_none()
-    else:
-        translation = (await db.execute(select(Translation).limit(1))).scalar_one_or_none()
+    # Fetch context verses for all requested translations in one query
+    query = (
+        select(Verse, Translation)
+        .join(Translation)
+        .where(
+            Verse.book_id == book_id_value,
+            Verse.chapter == chapter,
+            Verse.verse.in_([verse - 1, verse + 1]),
+        )
+    )
 
-    if not translation:
+    if translation_abbrs:
+        query = query.where(Translation.abbreviation.in_(translation_abbrs))
+
+    rows = (await db.execute(query)).all()
+
+    if not rows:
         return context
 
-    # Fetch both previous and next verses in a single query
-    # This is more efficient than two separate queries
-    context_verses = (
-        await db.execute(
-            select(Verse)
-            .where(
-                Verse.book_id == book_id_value,
-                Verse.translation_id == translation.id,
-                Verse.chapter == chapter,
-                Verse.verse.in_([verse - 1, verse + 1]),
-            )
+    # Group by verse number
+    grouped: dict[int, dict] = {}
+    for v, trans in rows:
+        if v.verse not in grouped:
+            grouped[v.verse] = {"chapter": v.chapter, "verse": v.verse, "translations": {}}
+        grouped[v.verse]["translations"][trans.abbreviation] = (
+            v.text[:100] + "..." if len(v.text) > 100 else v.text
         )
-    ).scalars().all()
 
-    for v in context_verses:
-        verse_data = {
-            "chapter": v.chapter,
-            "verse": v.verse,
-            "text": v.text[:100] + "..." if len(v.text) > 100 else v.text,
-        }
-
-        if v.verse == verse - 1:
-            context["previous"] = verse_data
-        elif v.verse == verse + 1:
-            context["next"] = verse_data
+    if verse - 1 in grouped:
+        context["previous"] = grouped[verse - 1]
+    if verse + 1 in grouped:
+        context["next"] = grouped[verse + 1]
 
     return context
 
@@ -498,23 +498,25 @@ async def search_by_theme(
 
 
 def rrf_merge(
-    ranked_lists: list[list[tuple[str, float]]],
+    ranked_lists: list[tuple[list[tuple[str, float]], float]],
     k: int = 60,
 ) -> list[tuple[str, float]]:
-    """Merge multiple ranked lists using Reciprocal Rank Fusion.
+    """Merge multiple ranked lists using Weighted Reciprocal Rank Fusion.
 
     Args:
-        ranked_lists: List of ranked results, each is [(ref_key, score), ...]
-                      sorted by score descending.
+        ranked_lists: List of (ranked_results, weight) pairs where each
+                      ranked_results is [(ref_key, score), ...] sorted desc.
+                      weight amplifies contribution from high-quality sources
+                      (e.g. main query = 2.0, expanded queries = 1.0).
         k: Smoothing constant (default 60, standard in literature).
 
     Returns:
         Merged list of (ref_key, rrf_score) sorted by RRF score descending.
     """
     scores: dict[str, float] = {}
-    for ranked_list in ranked_lists:
+    for ranked_list, weight in ranked_lists:
         for rank, (ref_key, _score) in enumerate(ranked_list):
-            scores[ref_key] = scores.get(ref_key, 0.0) + 1.0 / (rank + k)
+            scores[ref_key] = scores.get(ref_key, 0.0) + weight / (rank + k)
     return sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
 
@@ -634,6 +636,9 @@ async def _fulltext_search(
     keywords = [w for w in words if w not in stopwords and len(w) > 2]
     search_query = ' '.join(keywords) if keywords else query
 
+    # websearch_to_tsquery supports AND/OR/phrase/"exact" syntax and handles
+    # malformed input gracefully. ts_rank_cd weights by cover density (term
+    # proximity matters), producing better ranking than ts_rank for multi-word queries.
     sql_template = """
         WITH ranked_verses AS (
             SELECT DISTINCT ON (v.book_id, v.chapter, v.verse)
@@ -648,12 +653,12 @@ async def _fulltext_search(
                 b.abbreviation as book_abbrev,
                 b.testament,
                 b.genre,
-                ts_rank(to_tsvector('english', v.text), plainto_tsquery('english', :search_query)) as rank
+                ts_rank_cd(to_tsvector('english', v.text), websearch_to_tsquery('english', :search_query)) as rank
             FROM verses v
             JOIN books b ON v.book_id = b.id
             WHERE v.translation_id = ANY(:translation_ids)
                 AND (
-                    to_tsvector('english', v.text) @@ plainto_tsquery('english', :search_query)
+                    to_tsvector('english', v.text) @@ websearch_to_tsquery('english', :search_query)
                     OR v.text ILIKE '%' || :query_like || '%'
                 )
     """
@@ -778,11 +783,15 @@ async def search_verses(
             },
         }
 
-    # Check if embeddings table has data
-    embeddings_count = (await db.execute(select(func.count()).select_from(Embedding))).scalar()
+    # Check if embeddings table has data (use cached value from startup when available)
+    if _has_embeddings is None:
+        embeddings_count = (await db.execute(select(func.count()).select_from(Embedding))).scalar()
+        has_embeddings = (embeddings_count or 0) > 0
+    else:
+        has_embeddings = _has_embeddings
 
     # Use full-text search if no embeddings available
-    if embeddings_count == 0:
+    if not has_embeddings:
         return await fulltext_search_verses(
             db=db,
             query=query,
@@ -798,56 +807,80 @@ async def search_verses(
         )
 
     # --- Enhanced retrieval pipeline ---
+    import asyncio
+
     internal_limit = max_results * settings.overretrieve_factor
-    ranked_lists: list[list[tuple[str, float]]] = []
+    # ranked_lists holds (ranked_list, weight) pairs for weighted RRF.
+    # Main query gets weight 2.0; expanded queries get weight 1.0.
+    ranked_lists_weighted: list[tuple[list[tuple[str, float]], float]] = []
     # Store row data keyed by ref_key for later assembly
     all_row_data: dict[str, dict] = {}
 
-    # 1. Vector search on original query
-    query_embedding = embed_query(query, api_key=api_key)
+    # 1 & 3. Embed main query + all expanded queries concurrently (non-blocking)
+    all_queries = [query] + (expanded_queries or [])
+    embeddings = await asyncio.gather(
+        *[embed_query_async(q, api_key=api_key) for q in all_queries],
+        return_exceptions=True,
+    )
+    query_embedding = embeddings[0] if not isinstance(embeddings[0], Exception) else None
+
+    if query_embedding is None:
+        logger.error(f"Failed to embed main query: {embeddings[0]}")
+        return {
+            "query_time_ms": int((time.time() - start_time) * 1000),
+            "results": [],
+            "search_metadata": {"total_results": 0, "error": "Embedding failed"},
+        }
+
+    # 1. Vector search on main query (weight=2.0 — higher signal than expansions)
     vector_results = await _vector_search(
         db, query_embedding, translation_ids, filters,
         settings.similarity_threshold, internal_limit,
     )
     if vector_results:
-        ranked_lists.append([(ref, score) for ref, score, _ in vector_results])
+        ranked_lists_weighted.append(([(ref, score) for ref, score, _ in vector_results], 2.0))
         for ref, _score, row_data in vector_results:
             all_row_data[ref] = row_data
 
-    # 2. Full-text search on original query (hybrid)
+    # 2. Full-text search on original query (hybrid, weight=2.0)
     if settings.enable_hybrid_search:
         ft_results = await _fulltext_search(
             db, query, translation_ids, filters, internal_limit,
         )
         if ft_results:
-            ranked_lists.append([(ref, score) for ref, score, _ in ft_results])
+            ranked_lists_weighted.append(([(ref, score) for ref, score, _ in ft_results], 2.0))
             for ref, _score, row_data in ft_results:
                 if ref not in all_row_data:
                     all_row_data[ref] = row_data
 
-    # 3. Vector search on expanded queries
+    # 3. Vector search on expanded queries (weight=1.0 — supporting signal)
     if expanded_queries:
-        for eq in expanded_queries:
+        eq_embeddings = embeddings[1:]
+        for eq, eq_embedding in zip(expanded_queries, eq_embeddings):
+            if isinstance(eq_embedding, Exception):
+                logger.warning(f"Expanded query embedding failed for {eq!r}: {eq_embedding}")
+                continue
             try:
-                eq_embedding = embed_query(eq, api_key=api_key)
                 eq_results = await _vector_search(
                     db, eq_embedding, translation_ids, filters,
                     settings.similarity_threshold, internal_limit,
                 )
                 if eq_results:
-                    ranked_lists.append([(ref, score) for ref, score, _ in eq_results])
+                    ranked_lists_weighted.append(
+                        ([(ref, score) for ref, score, _ in eq_results], 1.0)
+                    )
                     for ref, _score, row_data in eq_results:
                         if ref not in all_row_data:
                             all_row_data[ref] = row_data
             except Exception as e:
                 logger.warning(f"Expanded query search failed for {eq!r}: {e}")
 
-    # 4. RRF merge all ranked lists
-    if len(ranked_lists) > 1:
-        merged = rrf_merge(ranked_lists, k=settings.rrf_k)
+    # 4. Weighted RRF merge all ranked lists
+    if len(ranked_lists_weighted) > 1:
+        merged = rrf_merge(ranked_lists_weighted, k=settings.rrf_k)
         search_method = "hybrid-rrf"
-    elif ranked_lists:
-        merged = ranked_lists[0]
+    elif ranked_lists_weighted:
+        merged = ranked_lists_weighted[0][0]
         search_method = "semantic"
     else:
         merged = []

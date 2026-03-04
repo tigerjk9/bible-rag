@@ -304,36 +304,44 @@ export default function VerseDetailPage() {
                 description="Shows the verses immediately before and after this verse to help you understand the surrounding narrative and flow of thought."
               />
             </h3>
-            <div className="space-y-space-md">
+            <div className="space-y-space-sm">
               {context.previous && (
-                <div className="border-l-4 border-text-tertiary dark:border-text-dark-tertiary pl-space-md">
-                  <button
-                    onClick={() => navigateToVerse({
-                      book: reference.book,
-                      chapter: context.previous!.chapter,
-                      verse: context.previous!.verse,
-                    })}
-                    className="verse-ref mb-space-xs inline-block"
-                  >
-                    {reference.book} {context.previous.chapter}:{context.previous.verse}
-                  </button>
-                  <p className="font-body text-base text-text-primary dark:text-text-dark-primary">{context.previous.text}</p>
-                </div>
+                <button
+                  onClick={() => navigateToVerse({ book: reference.book, chapter: context.previous!.chapter, verse: context.previous!.verse })}
+                  className="w-full text-left"
+                >
+                  {selectedTranslations.map((t) => context.previous!.translations[t] && (
+                    <p key={t} className="font-body text-base text-text-primary dark:text-text-dark-primary">
+                      <span className="font-ui text-xs text-text-tertiary dark:text-text-dark-tertiary mr-2 select-none">
+                        {context.previous!.chapter}:{context.previous!.verse}{selectedTranslations.length > 1 ? ` · ${t}` : ''}
+                      </span>
+                      {context.previous!.translations[t]}
+                    </p>
+                  ))}
+                </button>
               )}
+              {selectedTranslations.map((t) => translations[t] && (
+                <p key={t} className="font-body text-base text-text-primary dark:text-text-dark-primary">
+                  <span className="font-ui text-xs text-text-tertiary dark:text-text-dark-tertiary mr-2 select-none">
+                    {reference.chapter}:{reference.verse}{selectedTranslations.length > 1 ? ` · ${t}` : ''}
+                  </span>
+                  {translations[t]}
+                </p>
+              ))}
               {context.next && (
-                <div className="border-l-4 border-text-tertiary dark:border-text-dark-tertiary pl-space-md">
-                  <button
-                    onClick={() => navigateToVerse({
-                      book: reference.book,
-                      chapter: context.next!.chapter,
-                      verse: context.next!.verse,
-                    })}
-                    className="verse-ref mb-space-xs inline-block"
-                  >
-                    {reference.book} {context.next.chapter}:{context.next.verse}
-                  </button>
-                  <p className="font-body text-base text-text-primary dark:text-text-dark-primary">{context.next.text}</p>
-                </div>
+                <button
+                  onClick={() => navigateToVerse({ book: reference.book, chapter: context.next!.chapter, verse: context.next!.verse })}
+                  className="w-full text-left"
+                >
+                  {selectedTranslations.map((t) => context.next!.translations[t] && (
+                    <p key={t} className="font-body text-base text-text-primary dark:text-text-dark-primary">
+                      <span className="font-ui text-xs text-text-tertiary dark:text-text-dark-tertiary mr-2 select-none">
+                        {context.next!.chapter}:{context.next!.verse}{selectedTranslations.length > 1 ? ` · ${t}` : ''}
+                      </span>
+                      {context.next!.translations[t]}
+                    </p>
+                  ))}
+                </button>
               )}
             </div>
           </div>

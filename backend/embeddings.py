@@ -104,6 +104,19 @@ def embed_query(query: str, api_key: str | None = None) -> np.ndarray:
         return embed_query_local(query)
 
 
+async def embed_query_async(query: str, api_key: str | None = None) -> np.ndarray:
+    """Async wrapper for embed_query that runs in a thread executor.
+
+    Prevents blocking the asyncio event loop during CPU-bound local inference
+    or network-bound Gemini API calls.
+    """
+    import asyncio
+    import functools
+
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, functools.partial(embed_query, query, api_key))
+
+
 def embed_texts(texts: list[str], api_key: str | None = None) -> np.ndarray:
     """Generate embeddings for multiple texts (for batch operations).
 

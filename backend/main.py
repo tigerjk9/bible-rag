@@ -26,15 +26,37 @@ async def lifespan(app: FastAPI):
 
     Handles startup and shutdown events.
     """
-    # Startup
-    print("Starting Bible RAG API...")
+    import asyncio
+    from sqlalchemy import func, select
+    from database import AsyncSessionLocal, Embedding
 
-    # Optionally preload the embedding model
-    # Uncomment to preload at startup (uses ~4GB RAM)
-    # from embeddings import get_embedding_model
-    # print("Preloading embedding model...")
-    # get_embedding_model()
-    # print("Embedding model loaded!")
+    print("Starting Bible RAG API...")
+    loop = asyncio.get_event_loop()
+
+    # Preload local embedding model to eliminate first-query latency (~3-5s)
+    if settings.embedding_mode == "local":
+        print("Preloading embedding model...")
+        from embeddings import _get_local_model
+        await loop.run_in_executor(None, _get_local_model)
+        print("Embedding model loaded.")
+
+    # Preload cross-encoder reranker
+    if settings.enable_reranking:
+        print("Preloading reranker...")
+        from reranker import _get_reranker
+        await loop.run_in_executor(None, _get_reranker)
+        print("Reranker loaded.")
+
+    # Cache embeddings availability so search doesn't COUNT(*) on every request
+    try:
+        async with AsyncSessionLocal() as db:
+            count = (await db.execute(select(func.count()).select_from(Embedding))).scalar()
+            import search as search_module
+            search_module._has_embeddings = (count or 0) > 0
+            print(f"Embeddings available: {search_module._has_embeddings} ({count} rows)")
+    except Exception as e:
+        print(f"Warning: could not check embeddings count: {e}")
+        # _has_embeddings stays None; search.py will fall back to per-request check
 
     yield
 

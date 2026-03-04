@@ -23,6 +23,7 @@ interface ChapterViewProps {
   verses: Verse[];
   selectedTranslation: string;
   showOriginal?: boolean;
+  highlightVerse?: number;
 }
 
 interface VerseDetails {
@@ -36,6 +37,7 @@ export default function ChapterView({
   verses,
   selectedTranslation,
   showOriginal = true,
+  highlightVerse,
 }: ChapterViewProps) {
   const router = useRouter();
   const [expandedVerse, setExpandedVerse] = useState<number | null>(null);
@@ -99,6 +101,7 @@ export default function ChapterView({
       <div className="space-y-px">
         {verses.map((verse) => {
           const isExpanded = expandedVerse === verse.verse;
+          const isHighlighted = highlightVerse === verse.verse;
           const details = verseDetails[verse.verse];
           const isLoading = loadingVerse === verse.verse;
 
@@ -107,7 +110,11 @@ export default function ChapterView({
               {/* Verse Text */}
               <button
                 className={`w-full text-left group hover:bg-background dark:hover:bg-background-dark -mx-space-sm px-space-sm py-space-sm transition-all cursor-pointer ${
-                  isExpanded ? 'bg-background dark:bg-background-dark border-l-4 border-accent-scripture dark:border-accent-dark-scripture' : ''
+                  isExpanded
+                    ? 'bg-background dark:bg-background-dark border-l-4 border-accent-scripture dark:border-accent-dark-scripture'
+                    : isHighlighted
+                    ? 'bg-amber-50 dark:bg-amber-950/30 border-l-4 border-amber-400 dark:border-amber-500'
+                    : ''
                 }`}
                 onClick={() => handleVerseClick(verse.verse)}
                 aria-expanded={isExpanded}

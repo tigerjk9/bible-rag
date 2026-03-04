@@ -1,9 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { SearchResult } from '@/types';
+import { SearchResult, ChapterResponse } from '@/types';
 import { getChapter } from '@/lib/api';
+import ParallelView from '@/components/ParallelView';
+import OriginalLanguage from '@/components/OriginalLanguage';
+import ChapterView from '@/components/ChapterView';
 
 interface VerseCardProps {
   result: SearchResult;
@@ -43,11 +46,21 @@ export default function VerseCard({ result, showAllTranslations = false, default
   const [showContext, setShowContext] = useState(false);
   const [loadingContext, setLoadingContext] = useState(false);
 
-  const { reference, translations, relevance_score, cross_references } = result;
+  // New: verse study panel states
+  const [showParallel, setShowParallel] = useState(false);
+  const [showOriginalLang, setShowOriginalLang] = useState(false);
+  const [showChapterModal, setShowChapterModal] = useState(false);
+  const [chapterData, setChapterData] = useState<ChapterResponse | null>(null);
+  const [loadingChapter, setLoadingChapter] = useState(false);
+
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  const { reference, translations, relevance_score, cross_references, original } = result;
 
   const relevancePercent = Math.round(relevance_score * 100);
   const isKorean = (text: string) => /[\uac00-\ud7a3]/.test(text);
   const verseUrl = `/verse/${encodeURIComponent(reference.book)}/${reference.chapter}/${reference.verse}`;
+  const translationCount = Object.keys(translations).length;
 
   // Group cross-references by relationship type
   const groupedRefs = cross_references?.reduce<Record<string, typeof cross_references>>((acc, ref) => {
@@ -57,8 +70,14 @@ export default function VerseCard({ result, showAllTranslations = false, default
     return acc;
   }, {});
 
+  // Convert translations Record to ParallelView format
+  const parallelTranslations = Object.entries(translations).map(([abbreviation, text]) => ({
+    abbreviation,
+    text,
+    language: isKorean(text) ? 'ko' : 'en',
+  }));
+
   async function handleLoadContext() {
-    // Toggle off if already loaded
     if (contextBefore !== null) {
       setShowContext(!showContext);
       return;
@@ -67,14 +86,14 @@ export default function VerseCard({ result, showAllTranslations = false, default
     setLoadingContext(true);
     try {
       const translation = activeTranslation || defaultTranslation;
-      const chapterData = await getChapter(
+      const chapterResult = await getChapter(
         reference.book,
         reference.chapter,
         translation ? [translation] : undefined,
       );
 
       const verses: { verse: number; translations: Record<string, string> }[] =
-        chapterData?.verses ?? [];
+        chapterResult?.verses ?? [];
 
       const targetIdx = verses.findIndex((v) => v.verse === reference.verse);
       const translationKey = translation || Object.keys(verses[0]?.translations ?? {})[0] || '';
@@ -100,6 +119,51 @@ export default function VerseCard({ result, showAllTranslations = false, default
       setLoadingContext(false);
     }
   }
+
+  async function handleOpenChapter() {
+    if (showChapterModal) {
+      setShowChapterModal(false);
+      return;
+    }
+
+    setShowChapterModal(true);
+
+    if (!chapterData) {
+      setLoadingChapter(true);
+      try {
+        const data = await getChapter(
+          reference.book,
+          reference.chapter,
+          Object.keys(translations),
+        );
+        setChapterData(data);
+      } catch {
+        // Silently fail
+      } finally {
+        setLoadingChapter(false);
+      }
+    }
+  }
+
+  // Scroll to highlighted verse after chapter data loads and modal opens
+  useEffect(() => {
+    if (showChapterModal && chapterData && !loadingChapter) {
+      const el = modalRef.current?.querySelector(`#verse-${reference.verse}`);
+      if (el) {
+        setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+      }
+    }
+  }, [showChapterModal, chapterData, loadingChapter, reference.verse]);
+
+  // Close modal on Escape key
+  useEffect(() => {
+    if (!showChapterModal) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowChapterModal(false);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [showChapterModal]);
 
   return (
     <div className="verse-card">
@@ -136,8 +200,8 @@ export default function VerseCard({ result, showAllTranslations = false, default
         </Link>
       )}
 
-      {/* Translation selector - underlined text tabs */}
-      {Object.keys(translations).length > 1 && !showAllTranslations && (
+      {/* Translation selector — hidden when Compare mode is active */}
+      {!showParallel && Object.keys(translations).length > 1 && !showAllTranslations && (
         <div className="flex gap-4 mb-space-sm border-b border-border-light dark:border-border-dark-light pb-2">
           {Object.keys(translations).map((trans) => (
             <button
@@ -153,22 +217,21 @@ export default function VerseCard({ result, showAllTranslations = false, default
         </div>
       )}
 
-      {/* Context: verses before */}
-      {showContext && contextBefore && contextBefore.length > 0 && (
-        <div className="mb-2 space-y-1 opacity-50">
-          {contextBefore.map((cv) => (
-            <p key={cv.verse} className={`${isKorean(cv.text) ? 'verse-text-korean korean-text' : 'verse-text'} text-sm dark:text-text-dark-secondary`}>
-              <span className="font-ui text-xs text-text-tertiary dark:text-text-dark-tertiary mr-2 select-none">
-                {cv.chapter}:{cv.verse}
-              </span>
-              {cv.text}
-            </p>
-          ))}
+      {/* Verse text — ParallelView when Compare active, else single/all */}
+      {showParallel ? (
+        <div className="mb-space-sm">
+          <ParallelView
+            reference={{
+              book: reference.book,
+              book_korean: reference.book_korean,
+              chapter: reference.chapter,
+              verse: reference.verse,
+            }}
+            translations={parallelTranslations}
+            layout="vertical"
+          />
         </div>
-      )}
-
-      {/* Verse text - THE HERO */}
-      {showAllTranslations ? (
+      ) : showAllTranslations ? (
         <div className="space-y-space-md">
           {Object.entries(translations).map(([trans, text]) => (
             <div key={trans} className="border-l-4 border-border-light dark:border-border-dark-light pl-space-md">
@@ -179,6 +242,36 @@ export default function VerseCard({ result, showAllTranslations = false, default
                 {text}
               </p>
             </div>
+          ))}
+        </div>
+      ) : showContext && (contextBefore?.length || contextAfter?.length) ? (
+        <div className="space-y-1 mb-space-sm">
+          {(contextBefore ?? []).map((cv) => (
+            <p key={cv.verse} className={`${isKorean(cv.text) ? 'verse-text-korean korean-text' : 'verse-text'} text-sm dark:text-text-dark-secondary`}>
+              <span className="font-ui text-xs text-text-tertiary dark:text-text-dark-tertiary mr-2 select-none">
+                {cv.chapter}:{cv.verse}
+              </span>
+              {cv.text}
+            </p>
+          ))}
+          <p className={`${
+              isKorean(translations[activeTranslation] || '')
+                ? 'verse-text-korean korean-text dark:text-text-dark-primary'
+                : 'verse-text dark:text-text-dark-primary'
+            }`}
+          >
+            <span className="font-ui text-xs text-text-tertiary dark:text-text-dark-tertiary mr-2 select-none">
+              {reference.chapter}:{reference.verse}
+            </span>
+            {translations[activeTranslation]}
+          </p>
+          {(contextAfter ?? []).map((cv) => (
+            <p key={cv.verse} className={`${isKorean(cv.text) ? 'verse-text-korean korean-text' : 'verse-text'} text-sm dark:text-text-dark-secondary`}>
+              <span className="font-ui text-xs text-text-tertiary dark:text-text-dark-tertiary mr-2 select-none">
+                {cv.chapter}:{cv.verse}
+              </span>
+              {cv.text}
+            </p>
           ))}
         </div>
       ) : (
@@ -192,33 +285,66 @@ export default function VerseCard({ result, showAllTranslations = false, default
         </p>
       )}
 
-      {/* Context: verses after */}
-      {showContext && contextAfter && contextAfter.length > 0 && (
-        <div className="mt-2 space-y-1 opacity-50">
-          {contextAfter.map((cv) => (
-            <p key={cv.verse} className={`${isKorean(cv.text) ? 'verse-text-korean korean-text' : 'verse-text'} text-sm dark:text-text-dark-secondary`}>
-              <span className="font-ui text-xs text-text-tertiary dark:text-text-dark-tertiary mr-2 select-none">
-                {cv.chapter}:{cv.verse}
-              </span>
-              {cv.text}
-            </p>
-          ))}
+      {/* Inline Original Language (word-level Strong's interlinear) */}
+      {showOriginalLang && original && (
+        <div className="mt-space-sm pt-space-sm border-t border-border-light dark:border-border-dark-light">
+          <OriginalLanguage
+            language={original.language as 'greek' | 'hebrew' | 'aramaic'}
+            text={original.words?.map(w => w.word).join(' ') || ''}
+            transliteration={original.words?.map(w => w.transliteration).filter(Boolean).join(' ')}
+            words={original.words}
+            strongs={original.words?.map(w => w.strongs).filter(Boolean) as string[]}
+            showInterlinear={true}
+          />
         </div>
       )}
 
-      {/* Context toggle button + cross-refs row */}
+      {/* Action bar */}
       <div className="mt-space-md pt-space-md border-t border-border-light dark:border-border-dark-light flex flex-wrap items-center gap-x-4 gap-y-1">
         <button
           onClick={handleLoadContext}
           disabled={loadingContext}
           className="btn-text dark:text-text-dark-secondary dark:hover:text-text-dark-primary dark:border-text-dark-tertiary dark:hover:border-text-dark-primary text-xs"
         >
-          {loadingContext
-            ? 'Loading…'
-            : showContext
-            ? '▴ Hide context'
-            : '± Context'}
+          {loadingContext ? 'Loading…' : showContext ? '▴ Hide context' : '± Context'}
         </button>
+
+        {translationCount > 1 && (
+          <button
+            onClick={() => setShowParallel(!showParallel)}
+            className={`btn-text text-xs ${
+              showParallel
+                ? 'text-accent-scripture dark:text-accent-dark-scripture border-accent-scripture dark:border-accent-dark-scripture'
+                : 'dark:text-text-dark-secondary dark:hover:text-text-dark-primary dark:border-text-dark-tertiary dark:hover:border-text-dark-primary'
+            }`}
+          >
+            ⧉ Compare
+          </button>
+        )}
+
+        <button
+          onClick={handleOpenChapter}
+          className={`btn-text text-xs ${
+            showChapterModal
+              ? 'text-accent-scripture dark:text-accent-dark-scripture border-accent-scripture dark:border-accent-dark-scripture'
+              : 'dark:text-text-dark-secondary dark:hover:text-text-dark-primary dark:border-text-dark-tertiary dark:hover:border-text-dark-primary'
+          }`}
+        >
+          ≡ Chapter
+        </button>
+
+        {original && original.words && original.words.length > 0 && (
+          <button
+            onClick={() => setShowOriginalLang(!showOriginalLang)}
+            className={`btn-text text-xs ${
+              showOriginalLang
+                ? 'text-accent-scripture dark:text-accent-dark-scripture border-accent-scripture dark:border-accent-dark-scripture'
+                : 'dark:text-text-dark-secondary dark:hover:text-text-dark-primary dark:border-text-dark-tertiary dark:hover:border-text-dark-primary'
+            }`}
+          >
+            ΑΩ {original.language === 'hebrew' ? 'Hebrew' : 'Greek'}
+          </button>
+        )}
 
         {cross_references && cross_references.length > 0 && (
           <button
@@ -264,6 +390,76 @@ export default function VerseCard({ result, showAllTranslations = false, default
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Chapter Reader Modal */}
+      {showChapterModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
+          aria-modal="true"
+          role="dialog"
+          aria-label={`${reference.book} chapter ${reference.chapter}`}
+        >
+          {/* Backdrop */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={() => setShowChapterModal(false)}
+          />
+
+          {/* Modal panel */}
+          <div
+            ref={modalRef}
+            className="relative z-10 w-full sm:max-w-2xl lg:max-w-3xl max-h-[85vh] sm:max-h-[80vh] overflow-y-auto bg-surface dark:bg-surface-dark border border-border-light dark:border-border-dark-light shadow-2xl"
+          >
+            {/* Sticky header */}
+            <div className="sticky top-0 z-10 flex items-center justify-between px-space-md py-space-sm bg-surface dark:bg-surface-dark border-b border-border-light dark:border-border-dark-light">
+              <span className="font-ui text-sm uppercase tracking-wide text-text-primary dark:text-text-dark-primary">
+                {reference.book} {reference.chapter}
+                {reference.book_korean && (
+                  <span className="font-korean ml-2 text-text-secondary dark:text-text-dark-secondary">
+                    {reference.book_korean} {reference.chapter}장
+                  </span>
+                )}
+              </span>
+              <button
+                onClick={() => setShowChapterModal(false)}
+                className="font-ui text-xs uppercase tracking-wide text-text-secondary dark:text-text-dark-secondary hover:text-text-primary dark:hover:text-text-dark-primary transition-colors px-2 py-1"
+                aria-label="Close chapter view"
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-space-md">
+              {loadingChapter ? (
+                <div className="flex flex-col items-center py-space-lg gap-3">
+                  <div className="spinner" />
+                  <p className="font-ui text-sm text-text-secondary dark:text-text-dark-secondary">
+                    Loading chapter…
+                  </p>
+                </div>
+              ) : chapterData ? (
+                <ChapterView
+                  reference={{
+                    book: chapterData.reference.book,
+                    book_korean: chapterData.reference.book_korean,
+                    chapter: chapterData.reference.chapter,
+                    testament: chapterData.reference.testament,
+                  }}
+                  verses={chapterData.verses}
+                  selectedTranslation={activeTranslation}
+                  showOriginal={false}
+                  highlightVerse={reference.verse}
+                />
+              ) : (
+                <p className="font-ui text-sm text-text-tertiary dark:text-text-dark-tertiary text-center py-space-lg">
+                  Could not load chapter.
+                </p>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>

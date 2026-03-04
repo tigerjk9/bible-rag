@@ -11,7 +11,7 @@ async def test_search_verses_no_translations(test_db):
     """Test search with invalid translations returns empty results."""
     from search import search_verses
 
-    with patch("search.embed_query") as mock_embed:
+    with patch("search.embed_query_async") as mock_embed:
         mock_embed.return_value = np.array([0.1] * 1024)
 
         results = await search_verses(
