@@ -457,7 +457,7 @@ export default function ComparePage() {
                       {verseSelection.chapter}:{verseSelection.verse - 1}
                     </div>
                     <p className="font-body text-xs text-text-secondary dark:text-text-dark-secondary mt-space-xs line-clamp-2">
-                      {verseData.context.previous.text}
+                      {verseData.context.previous.translations[selectedTranslations[0]] ?? Object.values(verseData.context.previous.translations)[0]}
                     </p>
                   </button>
                 )}
@@ -474,7 +474,7 @@ export default function ComparePage() {
                       {verseSelection.chapter}:{verseSelection.verse + 1}
                     </div>
                     <p className="font-body text-xs text-text-secondary dark:text-text-dark-secondary mt-space-xs line-clamp-2">
-                      {verseData.context.next.text}
+                      {verseData.context.next.translations[selectedTranslations[0]] ?? Object.values(verseData.context.next.translations)[0]}
                     </p>
                   </button>
                 )}
