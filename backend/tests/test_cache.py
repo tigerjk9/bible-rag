@@ -155,3 +155,186 @@ def test_get_cache_stats(mock_redis):
     assert stats["connected"] is True
     assert stats["used_memory"] == "1.5M"
     assert stats["cached_searches"] == 2
+
+
+# --- Error path tests ---
+
+@pytest.mark.unit
+def test_get_cached_results_connection_error_returns_none(mock_redis):
+    """get_cached_results() returns None when Redis raises ConnectionError."""
+    import redis
+
+    cache = CacheClient()
+    cache._client = mock_redis
+    mock_redis.get.side_effect = redis.ConnectionError("down")
+
+    result = cache.get_cached_results("some_key")
+    assert result is None
+
+
+@pytest.mark.unit
+def test_cache_results_connection_error_returns_false(mock_redis):
+    """cache_results() returns False when Redis raises ConnectionError."""
+    import redis
+
+    cache = CacheClient()
+    cache._client = mock_redis
+    mock_redis.setex.side_effect = redis.ConnectionError("down")
+
+    result = cache.cache_results("key", {"results": []}, "query")
+    assert result is False
+
+
+@pytest.mark.unit
+def test_get_cached_embedding_connection_error_returns_none(mock_redis):
+    """get_cached_embedding() returns None on Redis error."""
+    import redis
+
+    cache = CacheClient()
+    cache._client = mock_redis
+    mock_redis.get.side_effect = redis.ConnectionError("down")
+
+    result = cache.get_cached_embedding("test text")
+    assert result is None
+
+
+@pytest.mark.unit
+def test_cache_embedding_connection_error_returns_false(mock_redis):
+    """cache_embedding() returns False on Redis error."""
+    import redis
+
+    cache = CacheClient()
+    cache._client = mock_redis
+    mock_redis.setex.side_effect = redis.ConnectionError("down")
+
+    result = cache.cache_embedding("text", [0.1] * 1024)
+    assert result is False
+
+
+# --- Verse cache tests ---
+
+@pytest.mark.unit
+def test_generate_verse_cache_key_consistent():
+    """generate_verse_cache_key() returns same key for same inputs."""
+    cache = CacheClient()
+    key1 = cache.generate_verse_cache_key("Genesis", 1, 1, ["NIV", "ESV"])
+    key2 = cache.generate_verse_cache_key("Genesis", 1, 1, ["ESV", "NIV"])
+    assert key1 == key2
+
+
+@pytest.mark.unit
+def test_generate_verse_cache_key_normalizes_book():
+    """generate_verse_cache_key() normalizes book name case."""
+    cache = CacheClient()
+    key1 = cache.generate_verse_cache_key("genesis", 1, 1)
+    key2 = cache.generate_verse_cache_key("Genesis", 1, 1)
+    assert key1 == key2
+
+
+@pytest.mark.unit
+def test_generate_verse_cache_key_varies_with_flags():
+    """generate_verse_cache_key() produces different keys for different flags."""
+    cache = CacheClient()
+    key1 = cache.generate_verse_cache_key("John", 3, 16, include_original=True)
+    key2 = cache.generate_verse_cache_key("John", 3, 16, include_original=False)
+    assert key1 != key2
+
+
+@pytest.mark.unit
+def test_get_cached_verse_success(mock_redis):
+    """get_cached_verse() returns dict when cache hit."""
+    import json
+
+    cache = CacheClient()
+    cache._client = mock_redis
+    verse_data = {"reference": {"book": "John", "chapter": 3, "verse": 16}}
+    mock_redis.get.return_value = json.dumps(verse_data)
+
+    result = cache.get_cached_verse("verse_key")
+    assert result is not None
+    assert result["reference"]["book"] == "John"
+
+
+@pytest.mark.unit
+def test_get_cached_verse_returns_none_on_miss(mock_redis):
+    """get_cached_verse() returns None when cache miss."""
+    cache = CacheClient()
+    cache._client = mock_redis
+    mock_redis.get.return_value = None
+
+    result = cache.get_cached_verse("verse_key")
+    assert result is None
+
+
+@pytest.mark.unit
+def test_get_cached_verse_returns_none_on_error(mock_redis):
+    """get_cached_verse() returns None on Redis error."""
+    import redis
+
+    cache = CacheClient()
+    cache._client = mock_redis
+    mock_redis.get.side_effect = redis.ConnectionError("down")
+
+    result = cache.get_cached_verse("verse_key")
+    assert result is None
+
+
+@pytest.mark.unit
+def test_cache_verse_success(mock_redis):
+    """cache_verse() returns True on success."""
+    cache = CacheClient()
+    cache._client = mock_redis
+
+    verse_data = {"reference": {"book": "John", "chapter": 3, "verse": 16}}
+    result = cache.cache_verse("verse_key", verse_data)
+    assert result is True
+    assert mock_redis.setex.called
+
+
+@pytest.mark.unit
+def test_cache_verse_returns_false_on_error(mock_redis):
+    """cache_verse() returns False on Redis error."""
+    import redis
+
+    cache = CacheClient()
+    cache._client = mock_redis
+    mock_redis.setex.side_effect = redis.ConnectionError("down")
+
+    result = cache.cache_verse("verse_key", {"reference": {}})
+    assert result is False
+
+
+@pytest.mark.unit
+def test_get_cache_stats_disconnected(mock_redis):
+    """get_cache_stats() returns disconnected status on error."""
+    import redis
+
+    cache = CacheClient()
+    cache._client = mock_redis
+    mock_redis.info.side_effect = redis.ConnectionError("down")
+
+    stats = cache.get_cache_stats()
+    assert stats["connected"] is False
+
+
+@pytest.mark.unit
+def test_clear_embedding_cache(mock_redis):
+    """clear_embedding_cache() deletes embedding keys."""
+    cache = CacheClient()
+    cache._client = mock_redis
+    mock_redis.keys.return_value = ["embedding:abc", "embedding:def"]
+    mock_redis.delete.return_value = 2
+
+    deleted = cache.clear_embedding_cache()
+    assert deleted == 2
+
+
+@pytest.mark.unit
+def test_clear_search_cache_empty(mock_redis):
+    """clear_search_cache() returns 0 when no keys exist."""
+    cache = CacheClient()
+    cache._client = mock_redis
+    mock_redis.keys.side_effect = [[], []]
+
+    deleted = cache.clear_search_cache()
+    assert deleted == 0

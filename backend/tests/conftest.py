@@ -487,6 +487,12 @@ def mock_gemini(mock_llm_response):
         yield mock_genai
 
 
+def pytest_sessionfinish(session, exitstatus):
+    """Dispose async engine after all tests to release aiosqlite background threads."""
+    import asyncio
+    asyncio.run(test_engine.dispose())
+
+
 def pytest_configure(config):
     """Configure pytest with custom markers."""
     config.addinivalue_line(

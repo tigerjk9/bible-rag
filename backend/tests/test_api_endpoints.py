@@ -302,3 +302,74 @@ async def test_get_verse_with_original_language(test_client, sample_nt_book, sam
     # But test_search.py verifies backend logic.
     
     # I will comment out the failing assertions in these specific tests or skip them if logic isn't there.
+
+
+# --- Chapter endpoint tests ---
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_get_chapter_not_found(test_client):
+    """GET /api/chapter/{book}/{chapter} returns 404 for invalid book."""
+    response = await test_client.get("/api/chapter/NonexistentBook/1")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_get_chapter_missing_data(test_client, sample_book):
+    """GET /api/chapter/{book}/{chapter} returns 404 when no verses exist."""
+    # Genesis chapter 99 has no verses in test db
+    response = await test_client.get("/api/chapter/Genesis/99")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_search_missing_translations_returns_422(test_client):
+    """POST /api/search with missing required translations field returns 422."""
+    response = await test_client.post("/api/search", json={"query": "love"})
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_search_query_too_long_returns_422(test_client):
+    """POST /api/search with query exceeding max_length returns 422."""
+    response = await test_client.post(
+        "/api/search",
+        json={"query": "x" * 501, "translations": ["TEV"]},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_themes_empty_theme_returns_422(test_client):
+    """POST /api/themes with empty theme string returns 422."""
+    response = await test_client.post(
+        "/api/themes",
+        json={"theme": "", "translations": ["TEV"]},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_books_filter_invalid_testament(test_client, sample_book, sample_nt_book):
+    """GET /api/books?testament=INVALID returns 422 due to pattern validation."""
+    # The testament query param has pattern="^(OT|NT)$" so INVALID fails validation
+    response = await test_client.get("/api/books?testament=INVALID")
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.unit
+async def test_get_translations_language_filter(test_client, sample_translation, sample_korean_translation):
+    """GET /api/translations returns all translations including both languages."""
+    response = await test_client.get("/api/translations")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_count"] == 2
+    abbrevs = {t["abbreviation"] for t in data["translations"]}
+    assert "TEV" in abbrevs
+    assert "TKV" in abbrevs

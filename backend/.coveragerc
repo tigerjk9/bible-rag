@@ -1,0 +1,16 @@
+[run]
+source = .
+omit =
+    tests/*
+    migrations/*
+    */scripts/*
+    data_ingestion.py
+    data_fetchers.py
+    embeddings.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if TYPE_CHECKING:
+    raise NotImplementedError
+    if __name__ == .__main__.:
