@@ -1,0 +1,778 @@
+[
+  {
+    "id": "en_001",
+    "query": "God so loved the world",
+    "language": "en",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "John", "chapter": 3, "verse": 16},
+      {"book": "John", "chapter": 3, "verse": 17}
+    ],
+    "notes": "Most famous verse in the Bible, should be rank 1"
+  },
+  {
+    "id": "en_002",
+    "query": "faith hope love greatest of these",
+    "language": "en",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "1 Corinthians", "chapter": 13, "verse": 13},
+      {"book": "1 Corinthians", "chapter": 13, "verse": 1}
+    ],
+    "notes": "1 Corinthians 13 love chapter"
+  },
+  {
+    "id": "en_003",
+    "query": "walk through the valley of the shadow of death",
+    "language": "en",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "Psalms", "chapter": 23, "verse": 4},
+      {"book": "Psalms", "chapter": 23, "verse": 1}
+    ],
+    "notes": "Psalm 23, very well known passage"
+  },
+  {
+    "id": "en_004",
+    "query": "I can do all things through Christ who strengthens me",
+    "language": "en",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "Philippians", "chapter": 4, "verse": 13}
+    ],
+    "notes": "Philippians 4:13, frequently quoted"
+  },
+  {
+    "id": "en_005",
+    "query": "the Lord is my shepherd I shall not want",
+    "language": "en",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "Psalms", "chapter": 23, "verse": 1},
+      {"book": "Psalms", "chapter": 23, "verse": 2}
+    ],
+    "notes": "Opening of Psalm 23"
+  },
+  {
+    "id": "en_006",
+    "query": "in the beginning God created the heavens and the earth",
+    "language": "en",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "Genesis", "chapter": 1, "verse": 1}
+    ],
+    "notes": "Opening verse of the Bible"
+  },
+  {
+    "id": "en_007",
+    "query": "for I know the plans I have for you plans to prosper",
+    "language": "en",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "Jeremiah", "chapter": 29, "verse": 11}
+    ],
+    "notes": "Jeremiah 29:11, popular verse"
+  },
+  {
+    "id": "en_008",
+    "query": "be strong and courageous do not be afraid",
+    "language": "en",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "Joshua", "chapter": 1, "verse": 9},
+      {"book": "Deuteronomy", "chapter": 31, "verse": 6}
+    ],
+    "notes": "God's command to Joshua"
+  },
+  {
+    "id": "en_009",
+    "query": "trust in the Lord with all your heart",
+    "language": "en",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "Proverbs", "chapter": 3, "verse": 5},
+      {"book": "Proverbs", "chapter": 3, "verse": 6}
+    ],
+    "notes": "Proverbs 3:5-6"
+  },
+  {
+    "id": "en_010",
+    "query": "love your enemies pray for those who persecute you",
+    "language": "en",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "Matthew", "chapter": 5, "verse": 44},
+      {"book": "Luke", "chapter": 6, "verse": 27}
+    ],
+    "notes": "Sermon on the Mount"
+  },
+  {
+    "id": "en_011",
+    "query": "patience in suffering tribulation",
+    "language": "en",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "Romans", "chapter": 5, "verse": 3},
+      {"book": "James", "chapter": 1, "verse": 3},
+      {"book": "Romans", "chapter": 8, "verse": 18}
+    ],
+    "notes": "Thematic query about perseverance through hardship"
+  },
+  {
+    "id": "en_012",
+    "query": "forgiveness of sins grace redemption",
+    "language": "en",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "Ephesians", "chapter": 1, "verse": 7},
+      {"book": "Colossians", "chapter": 1, "verse": 14},
+      {"book": "1 John", "chapter": 1, "verse": 9}
+    ],
+    "notes": "Thematic query about forgiveness"
+  },
+  {
+    "id": "en_013",
+    "query": "anxiety worry do not be anxious about anything",
+    "language": "en",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "Philippians", "chapter": 4, "verse": 6},
+      {"book": "Matthew", "chapter": 6, "verse": 25},
+      {"book": "1 Peter", "chapter": 5, "verse": 7}
+    ],
+    "notes": "Thematic query about worry and anxiety"
+  },
+  {
+    "id": "en_014",
+    "query": "wisdom and understanding seek knowledge",
+    "language": "en",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "Proverbs", "chapter": 4, "verse": 7},
+      {"book": "James", "chapter": 1, "verse": 5},
+      {"book": "Proverbs", "chapter": 9, "verse": 10}
+    ],
+    "notes": "Thematic query about wisdom"
+  },
+  {
+    "id": "en_015",
+    "query": "prayer answered ask seek knock",
+    "language": "en",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "Matthew", "chapter": 7, "verse": 7},
+      {"book": "Luke", "chapter": 11, "verse": 9},
+      {"book": "John", "chapter": 16, "verse": 24}
+    ],
+    "notes": "Thematic query about prayer"
+  },
+  {
+    "id": "en_016",
+    "query": "resurrection life eternal salvation",
+    "language": "en",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "John", "chapter": 11, "verse": 25},
+      {"book": "Romans", "chapter": 6, "verse": 23},
+      {"book": "John", "chapter": 3, "verse": 16}
+    ],
+    "notes": "Thematic query about salvation and eternal life"
+  },
+  {
+    "id": "en_017",
+    "query": "Holy Spirit comfort guide truth",
+    "language": "en",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "John", "chapter": 14, "verse": 26},
+      {"book": "John", "chapter": 16, "verse": 13},
+      {"book": "Acts", "chapter": 1, "verse": 8}
+    ],
+    "notes": "Thematic query about the Holy Spirit"
+  },
+  {
+    "id": "en_018",
+    "query": "generosity giving cheerful giver",
+    "language": "en",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "2 Corinthians", "chapter": 9, "verse": 7},
+      {"book": "Luke", "chapter": 6, "verse": 38},
+      {"book": "Proverbs", "chapter": 11, "verse": 24}
+    ],
+    "notes": "Thematic query about generosity"
+  },
+  {
+    "id": "en_019",
+    "query": "humility servant leadership greatest among you",
+    "language": "en",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "Matthew", "chapter": 23, "verse": 11},
+      {"book": "Philippians", "chapter": 2, "verse": 3},
+      {"book": "Mark", "chapter": 10, "verse": 43}
+    ],
+    "notes": "Thematic query about humility and service"
+  },
+  {
+    "id": "en_020",
+    "query": "creation nature declares glory of God",
+    "language": "en",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "Psalms", "chapter": 19, "verse": 1},
+      {"book": "Romans", "chapter": 1, "verse": 20},
+      {"book": "Psalms", "chapter": 8, "verse": 3}
+    ],
+    "notes": "Thematic query about creation and God's glory"
+  },
+  {
+    "id": "en_021",
+    "query": "Moses parting the Red Sea",
+    "language": "en",
+    "category": "person",
+    "expected_verses": [
+      {"book": "Exodus", "chapter": 14, "verse": 21},
+      {"book": "Exodus", "chapter": 14, "verse": 16}
+    ],
+    "notes": "Famous miracle of Moses"
+  },
+  {
+    "id": "en_022",
+    "query": "David and Goliath battle Philistine giant",
+    "language": "en",
+    "category": "person",
+    "expected_verses": [
+      {"book": "1 Samuel", "chapter": 17, "verse": 45},
+      {"book": "1 Samuel", "chapter": 17, "verse": 49},
+      {"book": "1 Samuel", "chapter": 17, "verse": 4}
+    ],
+    "notes": "David vs Goliath narrative"
+  },
+  {
+    "id": "en_023",
+    "query": "Noah ark flood animals two by two",
+    "language": "en",
+    "category": "person",
+    "expected_verses": [
+      {"book": "Genesis", "chapter": 6, "verse": 19},
+      {"book": "Genesis", "chapter": 7, "verse": 5},
+      {"book": "Genesis", "chapter": 6, "verse": 14}
+    ],
+    "notes": "Noah and the Ark"
+  },
+  {
+    "id": "en_024",
+    "query": "Abraham faith sacrifice son Isaac",
+    "language": "en",
+    "category": "person",
+    "expected_verses": [
+      {"book": "Genesis", "chapter": 22, "verse": 9},
+      {"book": "Hebrews", "chapter": 11, "verse": 17},
+      {"book": "Genesis", "chapter": 22, "verse": 2}
+    ],
+    "notes": "Abraham's sacrifice of Isaac"
+  },
+  {
+    "id": "en_025",
+    "query": "Paul shipwreck journey missionary journey",
+    "language": "en",
+    "category": "person",
+    "expected_verses": [
+      {"book": "Acts", "chapter": 27, "verse": 22},
+      {"book": "Acts", "chapter": 27, "verse": 41}
+    ],
+    "notes": "Paul's shipwreck in Acts"
+  },
+  {
+    "id": "en_026",
+    "query": "Elijah fire from heaven Mount Carmel",
+    "language": "en",
+    "category": "person",
+    "expected_verses": [
+      {"book": "1 Kings", "chapter": 18, "verse": 38},
+      {"book": "1 Kings", "chapter": 18, "verse": 36}
+    ],
+    "notes": "Elijah vs prophets of Baal"
+  },
+  {
+    "id": "en_027",
+    "query": "Peter walking on water faith sinking",
+    "language": "en",
+    "category": "person",
+    "expected_verses": [
+      {"book": "Matthew", "chapter": 14, "verse": 29},
+      {"book": "Matthew", "chapter": 14, "verse": 30}
+    ],
+    "notes": "Peter walking on water"
+  },
+  {
+    "id": "en_028",
+    "query": "Daniel lion den deliverance",
+    "language": "en",
+    "category": "person",
+    "expected_verses": [
+      {"book": "Daniel", "chapter": 6, "verse": 22},
+      {"book": "Daniel", "chapter": 6, "verse": 16}
+    ],
+    "notes": "Daniel in the lion's den"
+  },
+  {
+    "id": "en_029",
+    "query": "Mary birth Jesus manger Bethlehem",
+    "language": "en",
+    "category": "person",
+    "expected_verses": [
+      {"book": "Luke", "chapter": 2, "verse": 7},
+      {"book": "Luke", "chapter": 2, "verse": 4},
+      {"book": "Matthew", "chapter": 1, "verse": 25}
+    ],
+    "notes": "Birth of Jesus narrative"
+  },
+  {
+    "id": "en_030",
+    "query": "Solomon wisdom judgment two women baby",
+    "language": "en",
+    "category": "person",
+    "expected_verses": [
+      {"book": "1 Kings", "chapter": 3, "verse": 27},
+      {"book": "1 Kings", "chapter": 3, "verse": 25},
+      {"book": "1 Kings", "chapter": 3, "verse": 9}
+    ],
+    "notes": "Solomon's famous judgment"
+  },
+  {
+    "id": "ko_001",
+    "query": "하나님이 세상을 이처럼 사랑하사",
+    "language": "ko",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "John", "chapter": 3, "verse": 16},
+      {"book": "John", "chapter": 3, "verse": 17}
+    ],
+    "notes": "Korean translation of John 3:16"
+  },
+  {
+    "id": "ko_002",
+    "query": "여호와는 나의 목자시니",
+    "language": "ko",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "Psalms", "chapter": 23, "verse": 1},
+      {"book": "Psalms", "chapter": 23, "verse": 2}
+    ],
+    "notes": "Psalm 23:1 in Korean"
+  },
+  {
+    "id": "ko_003",
+    "query": "내가 사망의 음침한 골짜기로 다닐지라도",
+    "language": "ko",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "Psalms", "chapter": 23, "verse": 4}
+    ],
+    "notes": "Psalm 23:4 in Korean"
+  },
+  {
+    "id": "ko_004",
+    "query": "두려워하지 말라 내가 너와 함께 함이라",
+    "language": "ko",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "Isaiah", "chapter": 41, "verse": 10},
+      {"book": "Joshua", "chapter": 1, "verse": 9}
+    ],
+    "notes": "Do not fear, I am with you"
+  },
+  {
+    "id": "ko_005",
+    "query": "원수를 사랑하며 너희를 박해하는 자를 위하여 기도하라",
+    "language": "ko",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "Matthew", "chapter": 5, "verse": 44}
+    ],
+    "notes": "Love your enemies in Korean"
+  },
+  {
+    "id": "ko_006",
+    "query": "태초에 하나님이 천지를 창조하시니라",
+    "language": "ko",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "Genesis", "chapter": 1, "verse": 1}
+    ],
+    "notes": "Genesis 1:1 in Korean"
+  },
+  {
+    "id": "ko_007",
+    "query": "내게 능력 주시는 자 안에서 내가 모든 것을 할 수 있느니라",
+    "language": "ko",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "Philippians", "chapter": 4, "verse": 13}
+    ],
+    "notes": "Philippians 4:13 in Korean"
+  },
+  {
+    "id": "ko_008",
+    "query": "믿음 소망 사랑 그 중에 제일은 사랑이라",
+    "language": "ko",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "1 Corinthians", "chapter": 13, "verse": 13}
+    ],
+    "notes": "1 Corinthians 13:13 in Korean"
+  },
+  {
+    "id": "ko_009",
+    "query": "마음을 다하여 여호와를 신뢰하고 네 명철을 의지하지 말라",
+    "language": "ko",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "Proverbs", "chapter": 3, "verse": 5},
+      {"book": "Proverbs", "chapter": 3, "verse": 6}
+    ],
+    "notes": "Proverbs 3:5-6 in Korean"
+  },
+  {
+    "id": "ko_010",
+    "query": "주의 계획은 내게 복이요 미래와 희망을 주는 것이라",
+    "language": "ko",
+    "category": "direct_reference",
+    "expected_verses": [
+      {"book": "Jeremiah", "chapter": 29, "verse": 11}
+    ],
+    "notes": "Jeremiah 29:11 in Korean"
+  },
+  {
+    "id": "ko_011",
+    "query": "고난 중에 인내와 믿음",
+    "language": "ko",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "Romans", "chapter": 5, "verse": 3},
+      {"book": "James", "chapter": 1, "verse": 3},
+      {"book": "Romans", "chapter": 8, "verse": 18}
+    ],
+    "notes": "Thematic: patience in suffering in Korean"
+  },
+  {
+    "id": "ko_012",
+    "query": "죄 용서 은혜 구원",
+    "language": "ko",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "Ephesians", "chapter": 1, "verse": 7},
+      {"book": "1 John", "chapter": 1, "verse": 9},
+      {"book": "Romans", "chapter": 6, "verse": 23}
+    ],
+    "notes": "Thematic: forgiveness and salvation in Korean"
+  },
+  {
+    "id": "ko_013",
+    "query": "염려하지 말고 기도와 간구로 구할 것을 하나님께 아뢰라",
+    "language": "ko",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "Philippians", "chapter": 4, "verse": 6},
+      {"book": "Matthew", "chapter": 6, "verse": 25},
+      {"book": "1 Peter", "chapter": 5, "verse": 7}
+    ],
+    "notes": "Thematic: do not worry, pray in Korean"
+  },
+  {
+    "id": "ko_014",
+    "query": "지혜를 얻으라 명철을 얻으라",
+    "language": "ko",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "Proverbs", "chapter": 4, "verse": 7},
+      {"book": "James", "chapter": 1, "verse": 5},
+      {"book": "Proverbs", "chapter": 9, "verse": 10}
+    ],
+    "notes": "Thematic: seek wisdom in Korean"
+  },
+  {
+    "id": "ko_015",
+    "query": "구하라 그리하면 받을 것이요 찾으라 그리하면 찾을 것이요",
+    "language": "ko",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "Matthew", "chapter": 7, "verse": 7},
+      {"book": "Luke", "chapter": 11, "verse": 9}
+    ],
+    "notes": "Ask seek knock in Korean"
+  },
+  {
+    "id": "ko_016",
+    "query": "부활 영생 구원의 은혜",
+    "language": "ko",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "John", "chapter": 11, "verse": 25},
+      {"book": "Romans", "chapter": 6, "verse": 23}
+    ],
+    "notes": "Thematic: resurrection and eternal life in Korean"
+  },
+  {
+    "id": "ko_017",
+    "query": "성령 보혜사 진리로 인도하심",
+    "language": "ko",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "John", "chapter": 14, "verse": 26},
+      {"book": "John", "chapter": 16, "verse": 13}
+    ],
+    "notes": "Thematic: Holy Spirit as guide in Korean"
+  },
+  {
+    "id": "ko_018",
+    "query": "즐거이 드리는 자를 사랑하시느니라 헌금 나눔",
+    "language": "ko",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "2 Corinthians", "chapter": 9, "verse": 7},
+      {"book": "Luke", "chapter": 6, "verse": 38}
+    ],
+    "notes": "Thematic: cheerful giving in Korean"
+  },
+  {
+    "id": "ko_019",
+    "query": "겸손하여 남을 자기보다 낫게 여기라",
+    "language": "ko",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "Philippians", "chapter": 2, "verse": 3},
+      {"book": "Matthew", "chapter": 23, "verse": 11}
+    ],
+    "notes": "Thematic: humility in Korean"
+  },
+  {
+    "id": "ko_020",
+    "query": "하늘이 하나님의 영광을 선포하고",
+    "language": "ko",
+    "category": "thematic",
+    "expected_verses": [
+      {"book": "Psalms", "chapter": 19, "verse": 1},
+      {"book": "Romans", "chapter": 1, "verse": 20}
+    ],
+    "notes": "Thematic: creation declares God's glory in Korean"
+  },
+  {
+    "id": "ko_021",
+    "query": "다윗과 골리앗 물맷돌 블레셋 거인",
+    "language": "ko",
+    "category": "person",
+    "expected_verses": [
+      {"book": "1 Samuel", "chapter": 17, "verse": 45},
+      {"book": "1 Samuel", "chapter": 17, "verse": 49}
+    ],
+    "notes": "David and Goliath in Korean"
+  },
+  {
+    "id": "ko_022",
+    "query": "모세 홍해를 가르다 이스라엘 탈출",
+    "language": "ko",
+    "category": "person",
+    "expected_verses": [
+      {"book": "Exodus", "chapter": 14, "verse": 21},
+      {"book": "Exodus", "chapter": 14, "verse": 16}
+    ],
+    "notes": "Moses parting the Red Sea in Korean"
+  },
+  {
+    "id": "ko_023",
+    "query": "노아 방주 홍수 동물 두 마리씩",
+    "language": "ko",
+    "category": "person",
+    "expected_verses": [
+      {"book": "Genesis", "chapter": 6, "verse": 19},
+      {"book": "Genesis", "chapter": 7, "verse": 5}
+    ],
+    "notes": "Noah and the Ark in Korean"
+  },
+  {
+    "id": "ko_024",
+    "query": "아브라함 이삭 번제 믿음의 조상",
+    "language": "ko",
+    "category": "person",
+    "expected_verses": [
+      {"book": "Genesis", "chapter": 22, "verse": 2},
+      {"book": "Genesis", "chapter": 22, "verse": 9},
+      {"book": "Hebrews", "chapter": 11, "verse": 17}
+    ],
+    "notes": "Abraham and Isaac in Korean"
+  },
+  {
+    "id": "ko_025",
+    "query": "다니엘 사자 굴에서 건져냄",
+    "language": "ko",
+    "category": "person",
+    "expected_verses": [
+      {"book": "Daniel", "chapter": 6, "verse": 22},
+      {"book": "Daniel", "chapter": 6, "verse": 16}
+    ],
+    "notes": "Daniel in the lion's den in Korean"
+  },
+  {
+    "id": "ko_026",
+    "query": "엘리야 갈멜산 하늘에서 불 내림",
+    "language": "ko",
+    "category": "person",
+    "expected_verses": [
+      {"book": "1 Kings", "chapter": 18, "verse": 38},
+      {"book": "1 Kings", "chapter": 18, "verse": 36}
+    ],
+    "notes": "Elijah on Mount Carmel in Korean"
+  },
+  {
+    "id": "ko_027",
+    "query": "베드로 물 위를 걷다 믿음이 부족하여",
+    "language": "ko",
+    "category": "person",
+    "expected_verses": [
+      {"book": "Matthew", "chapter": 14, "verse": 29},
+      {"book": "Matthew", "chapter": 14, "verse": 30}
+    ],
+    "notes": "Peter walking on water in Korean"
+  },
+  {
+    "id": "ko_028",
+    "query": "솔로몬 지혜 두 여인 아이 판결",
+    "language": "ko",
+    "category": "person",
+    "expected_verses": [
+      {"book": "1 Kings", "chapter": 3, "verse": 27},
+      {"book": "1 Kings", "chapter": 3, "verse": 25}
+    ],
+    "notes": "Solomon's wisdom judgment in Korean"
+  },
+  {
+    "id": "ko_029",
+    "query": "요셉 형들에게 팔려 애굽에서 총리가 됨",
+    "language": "ko",
+    "category": "person",
+    "expected_verses": [
+      {"book": "Genesis", "chapter": 37, "verse": 28},
+      {"book": "Genesis", "chapter": 41, "verse": 41}
+    ],
+    "notes": "Joseph sold into Egypt and becoming governor"
+  },
+  {
+    "id": "ko_030",
+    "query": "예수님의 탄생 베들레헴 말구유 동정녀 마리아",
+    "language": "ko",
+    "category": "person",
+    "expected_verses": [
+      {"book": "Luke", "chapter": 2, "verse": 7},
+      {"book": "Luke", "chapter": 2, "verse": 4},
+      {"book": "Matthew", "chapter": 1, "verse": 25}
+    ],
+    "notes": "Birth of Jesus in Korean"
+  },
+  {
+    "id": "cl_001",
+    "query": "하나님이 세상을 사랑하사 독생자를 주셨으니",
+    "language": "ko",
+    "category": "cross_lingual",
+    "expected_verses": [
+      {"book": "John", "chapter": 3, "verse": 16}
+    ],
+    "notes": "Cross-lingual: same verse as en_001 in Korean"
+  },
+  {
+    "id": "cl_002",
+    "query": "여호와는 나의 목자 부족함이 없으리로다",
+    "language": "ko",
+    "category": "cross_lingual",
+    "expected_verses": [
+      {"book": "Psalms", "chapter": 23, "verse": 1}
+    ],
+    "notes": "Cross-lingual: same verse as en_005 in Korean"
+  },
+  {
+    "id": "cl_003",
+    "query": "모든 것을 할 수 있다 그리스도로 강건하게 하심",
+    "language": "ko",
+    "category": "cross_lingual",
+    "expected_verses": [
+      {"book": "Philippians", "chapter": 4, "verse": 13}
+    ],
+    "notes": "Cross-lingual: same verse as en_004 in Korean"
+  },
+  {
+    "id": "cl_004",
+    "query": "용서 은혜 십자가 피로 구속함",
+    "language": "ko",
+    "category": "cross_lingual",
+    "expected_verses": [
+      {"book": "Ephesians", "chapter": 1, "verse": 7},
+      {"book": "Colossians", "chapter": 1, "verse": 14}
+    ],
+    "notes": "Cross-lingual: forgiveness/grace theme in Korean"
+  },
+  {
+    "id": "cl_005",
+    "query": "구하라 찾으라 두드리라 응답 받으리라",
+    "language": "ko",
+    "category": "cross_lingual",
+    "expected_verses": [
+      {"book": "Matthew", "chapter": 7, "verse": 7},
+      {"book": "Luke", "chapter": 11, "verse": 9}
+    ],
+    "notes": "Cross-lingual: ask seek knock in Korean"
+  },
+  {
+    "id": "cl_006",
+    "query": "인내 시험 믿음의 연단 소망",
+    "language": "ko",
+    "category": "cross_lingual",
+    "expected_verses": [
+      {"book": "Romans", "chapter": 5, "verse": 3},
+      {"book": "James", "chapter": 1, "verse": 3}
+    ],
+    "notes": "Cross-lingual: patience and testing of faith in Korean"
+  },
+  {
+    "id": "cl_007",
+    "query": "지혜 부족하거든 하나님께 구하라 후히 주시리라",
+    "language": "ko",
+    "category": "cross_lingual",
+    "expected_verses": [
+      {"book": "James", "chapter": 1, "verse": 5}
+    ],
+    "notes": "Cross-lingual: ask God for wisdom in Korean"
+  },
+  {
+    "id": "cl_008",
+    "query": "사랑은 오래 참고 온유하며 투기하지 않음",
+    "language": "ko",
+    "category": "cross_lingual",
+    "expected_verses": [
+      {"book": "1 Corinthians", "chapter": 13, "verse": 4},
+      {"book": "1 Corinthians", "chapter": 13, "verse": 13}
+    ],
+    "notes": "Cross-lingual: love is patient kind in Korean"
+  },
+  {
+    "id": "cl_009",
+    "query": "죄의 삯은 사망이요 하나님의 은사는 영생이라",
+    "language": "ko",
+    "category": "cross_lingual",
+    "expected_verses": [
+      {"book": "Romans", "chapter": 6, "verse": 23}
+    ],
+    "notes": "Cross-lingual: wages of sin is death in Korean"
+  },
+  {
+    "id": "cl_010",
+    "query": "이 모든 것 위에 사랑을 더하라 온전하게 묶는 것",
+    "language": "ko",
+    "category": "cross_lingual",
+    "expected_verses": [
+      {"book": "Colossians", "chapter": 3, "verse": 14}
+    ],
+    "notes": "Cross-lingual: love binds everything together in Korean"
+  }
+]

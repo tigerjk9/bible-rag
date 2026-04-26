@@ -2,6 +2,7 @@
 
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,7 +17,14 @@ class Settings(BaseSettings):
     )
 
     # Database
-    database_url: str = "postgresql://bible_user:bible_password@localhost:5432/bible_rag"
+    database_url: str
+
+    @field_validator("database_url")
+    @classmethod
+    def database_url_must_not_be_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("DATABASE_URL must be set and non-empty")
+        return v
 
     # Redis
     redis_url: str = "redis://localhost:6379/0"

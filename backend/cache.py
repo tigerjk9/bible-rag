@@ -186,7 +186,13 @@ class CacheClient:
         """
         try:
             info = self.client.info()
-            keys = self.client.keys("search:*")
+            cursor = 0
+            keys = []
+            while True:
+                cursor, batch = self.client.scan(cursor, match="search:*", count=100)
+                keys.extend(batch)
+                if cursor == 0:
+                    break
 
             return {
                 "connected": True,
@@ -208,12 +214,17 @@ class CacheClient:
             Number of keys deleted
         """
         try:
-            keys = self.client.keys("search:*")
-            stats_keys = self.client.keys("stats:*")
-            all_keys = keys + stats_keys
+            keys = []
+            for pattern in ("search:*", "stats:*"):
+                cursor = 0
+                while True:
+                    cursor, batch = self.client.scan(cursor, match=pattern, count=100)
+                    keys.extend(batch)
+                    if cursor == 0:
+                        break
 
-            if all_keys:
-                return self.client.delete(*all_keys)
+            if keys:
+                return self.client.delete(*keys)
             return 0
         except (redis.ConnectionError, redis.TimeoutError):
             return 0
@@ -225,7 +236,13 @@ class CacheClient:
             Number of keys deleted
         """
         try:
-            keys = self.client.keys("embedding:*")
+            cursor = 0
+            keys = []
+            while True:
+                cursor, batch = self.client.scan(cursor, match="embedding:*", count=100)
+                keys.extend(batch)
+                if cursor == 0:
+                    break
             if keys:
                 return self.client.delete(*keys)
             return 0

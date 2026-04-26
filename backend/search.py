@@ -77,6 +77,8 @@ async def fulltext_search_verses(
     # If we filtered out everything, use original query
     search_query = ' '.join(keywords) if keywords else query
 
+    safe_query_like = search_query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
     sql_template = """
         WITH ranked_verses AS (
             SELECT DISTINCT ON (v.book_id, v.chapter, v.verse)
@@ -97,14 +99,14 @@ async def fulltext_search_verses(
             WHERE v.translation_id = ANY(:translation_ids)
                 AND (
                     to_tsvector('english', v.text) @@ websearch_to_tsquery('english', :search_query)
-                    OR v.text ILIKE '%' || :query_like || '%'
+                    OR v.text ILIKE '%' || :query_like || '%' ESCAPE '\\'
                 )
     """
 
     bindparams_list = [
         bindparam("translation_ids", value=translation_ids, type_=ARRAY(PGUUID)),
         bindparam("search_query", value=search_query),
-        bindparam("query_like", value=search_query),
+        bindparam("query_like", value=safe_query_like),
         bindparam("max_results", value=max_results, type_=Integer),
     ]
 
@@ -537,7 +539,7 @@ async def _vector_search(
 
     await db.execute(text("SET ivfflat.probes = 20"))
 
-    sql_template = f"""
+    sql_template = """
         WITH top_verses AS (
             SELECT DISTINCT ON (v.book_id, v.chapter, v.verse)
                 v.id as verse_id,
@@ -546,7 +548,7 @@ async def _vector_search(
                 v.verse,
                 v.text,
                 v.translation_id,
-                1 - (e.vector <=> '{query_vector_str}'::vector) as similarity,
+                1 - (e.vector <=> :query_vector::vector) as similarity,
                 b.name as book_name,
                 b.name_korean as book_name_korean,
                 b.abbreviation as book_abbrev,
@@ -556,10 +558,11 @@ async def _vector_search(
             JOIN verses v ON e.verse_id = v.id
             JOIN books b ON v.book_id = b.id
             WHERE v.translation_id = ANY(:translation_ids)
-                AND (1 - (e.vector <=> '{query_vector_str}'::vector)) > :similarity_threshold
+                AND (1 - (e.vector <=> :query_vector::vector)) > :similarity_threshold
     """
 
     bindparams_list = [
+        bindparam("query_vector", value=query_vector_str),
         bindparam("translation_ids", value=translation_ids, type_=ARRAY(PGUUID)),
         bindparam("similarity_threshold", value=similarity_threshold, type_=Float),
         bindparam("limit", value=limit, type_=Integer),
@@ -636,6 +639,8 @@ async def _fulltext_search(
     keywords = [w for w in words if w not in stopwords and len(w) > 2]
     search_query = ' '.join(keywords) if keywords else query
 
+    safe_query_like = search_query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
     # websearch_to_tsquery supports AND/OR/phrase/"exact" syntax and handles
     # malformed input gracefully. ts_rank_cd weights by cover density (term
     # proximity matters), producing better ranking than ts_rank for multi-word queries.
@@ -659,14 +664,14 @@ async def _fulltext_search(
             WHERE v.translation_id = ANY(:translation_ids)
                 AND (
                     to_tsvector('english', v.text) @@ websearch_to_tsquery('english', :search_query)
-                    OR v.text ILIKE '%' || :query_like || '%'
+                    OR v.text ILIKE '%' || :query_like || '%' ESCAPE '\\'
                 )
     """
 
     bindparams_list = [
         bindparam("translation_ids", value=translation_ids, type_=ARRAY(PGUUID)),
         bindparam("search_query", value=search_query),
-        bindparam("query_like", value=search_query),
+        bindparam("query_like", value=safe_query_like),
         bindparam("limit", value=limit, type_=Integer),
     ]
 

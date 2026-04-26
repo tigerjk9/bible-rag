@@ -29,11 +29,11 @@ jobs:
           cd backend
           pip install -r requirements.txt
 
-      - name: Run tests (if tests exist)
+      - name: Run tests
         run: |
           cd backend
-          # Add test command here when tests are available
-          # pytest tests/
+          pip install pytest pytest-asyncio aiosqlite httpx
+          pytest tests/ -m unit -v --tb=short
 
       - name: Deploy to Koyeb
         if: success()
@@ -118,7 +118,7 @@ jobs:
       - name: Lint frontend
         run: |
           cd frontend
-          npm run lint || true
+          npm run lint
 
       - name: Build frontend
         run: |
